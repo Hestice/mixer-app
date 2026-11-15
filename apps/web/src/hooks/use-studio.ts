@@ -6,11 +6,19 @@ import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '..
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
 import { Metronome, canSoundClick, type MetronomeMode } from '../lib/metronome';
 import { encodeWav } from '../lib/wav';
+import { useCloud } from '../components/cloud-provider';
+import { getBackupPreference } from '../lib/backup-store';
 import { getSong, SongWriter, storageMessage, type SongContent } from '../lib/song-store';
 
 export type RecordingState = 'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'processing' | 'review';
 
 export function useStudio(startInWorkspace = false) {
+  const cloud = useCloud();
+  const [songId, setSongId] = useState('');
+  const [ownerId, setOwnerId] = useState<string | undefined>();
+  const [localRevision, setLocalRevision] = useState(0);
+  const effectiveOwner = cloud.links.find((link) => link.id === songId)?.ownerId ?? ownerId;
+  const accountBlocked = !!effectiveOwner && (!cloud.ready || effectiveOwner !== cloud.user?.id);
   const engineRef = useRef<AudioEngine | null>(null);
   const getEngine = () => engineRef.current ?? (engineRef.current = new AudioEngine());
   const tourChapterRef = useRef(0);
@@ -59,7 +67,7 @@ export function useStudio(startInWorkspace = false) {
   const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const disposed = useRef(false);
   const hasRecordings = layers.some((layer) => layer.recorded) || !!candidate?.recorded;
-  const locked = (workspace && !localReady) || ['requesting', 'countdown', 'recording', 'processing'].includes(recordingState);
+  const locked = accountBlocked || (workspace && !localReady) || ['requesting', 'countdown', 'recording', 'processing'].includes(recordingState);
   const mix = [...layers, ...(candidate && (!workspace || recordingState === 'review' && previewCandidate) ? [{ ...candidate, enabled: previewCandidate }] : [])].map((layer) => ({
     ...layer, enabled: soloId ? layer.id === soloId : layer.enabled,
   }));
@@ -75,19 +83,30 @@ export function useStudio(startInWorkspace = false) {
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('song');
     if (!workspace) { if (id) setWorkspace(true); return; }
-    if (writerRef.current) return;
+    if (writerRef.current || !cloud.ready) return;
     let canceled = false;
     if (!id) {
-      const nextId = crypto.randomUUID();
-      writerRef.current = new SongWriter(nextId);
-      const url = new URL(window.location.href);
-      url.searchParams.set('song', nextId);
-      window.history.replaceState(window.history.state, '', url);
-      setLocalReady(true);
+      void (async () => {
+        let creationOwner: string | undefined;
+        if (cloud.user) {
+          const preference = await getBackupPreference(cloud.user.id).catch(() => undefined);
+          if (preference?.enabled) creationOwner = cloud.user.id;
+        }
+        if (canceled || writerRef.current) return;
+        const nextId = crypto.randomUUID();
+        writerRef.current = new SongWriter(nextId, 0, creationOwner);
+        setSongId(nextId); setOwnerId(creationOwner);
+        const url = new URL(window.location.href);
+        url.searchParams.set('song', nextId);
+        window.history.replaceState(window.history.state, '', url);
+        setLocalReady(true);
+      })();
     } else {
       void getSong(id).then((song) => {
         if (canceled) return;
         if (!song) { setLoadError('This song is not on this browser. It may have been saved on another device, or its browser data was cleared.'); return; }
+        if (song.ownerId && song.ownerId !== cloud.user?.id) { setLoadError('Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.'); return; }
+        setLoadError(''); setSongId(id); setOwnerId(song.ownerId); setLocalRevision(song.revision);
         writerRef.current = new SongWriter(id, song.revision);
         setTitle(song.title); setLayers(song.layers); setCandidate(song.candidate);
         setWithDemo(song.withDemo); setVolumeState(song.volume); setPartName(song.partName);
@@ -101,14 +120,21 @@ export function useStudio(startInWorkspace = false) {
       }).catch(() => { if (!canceled) setLoadError('Your songs could not be opened. Check that browser storage is available, then reload to try again.'); });
     }
     return () => { canceled = true; };
-  }, [workspace]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [workspace, cloud.ready, cloud.user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!accountBlocked) return;
+    if (recordingState === 'recording') void stopRecording();
+    else cancelSetup();
+  }, [accountBlocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function persistSong(snapshot = contentRef.current) {
     if (!writerRef.current) return false;
     const version = ++saveVersion.current;
     setSaveError('');
     try {
-      await writerRef.current.write(snapshot);
+      const saved = await writerRef.current.write(snapshot);
+      if (!disposed.current) setLocalRevision(saved.revision);
       if (!disposed.current && version === saveVersion.current) { persistedContent.current = snapshot; setSavedContent(snapshot); }
       return true;
     } catch (reason) {
@@ -460,7 +486,8 @@ export function useStudio(startInWorkspace = false) {
   }
 
   return {
-    title, setTitle, localReady, loadError, saveState, saveError, retrySave: () => persistSong(), openMySongs,
+    songId, cloudStatus: cloud.status(songId, localRevision), cloudError: cloud.errors[songId], retryCloud: cloud.retry,
+    title, setTitle, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, retrySave: () => persistSong(), openMySongs,
     layers, candidate, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,

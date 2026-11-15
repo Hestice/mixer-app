@@ -68,6 +68,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
     <main className="studio-desk" aria-label="Recording console">
       <div className="studio-project"><div><label htmlFor="song-title">YOUR SESSION</label><input id="song-title" ref={heading} aria-label="Song name" maxLength={70} value={title} onChange={(event) => setTitle(event.target.value)} /></div><span className={`studio-storage ${studio.saveState === 'error' ? 'save-failed' : ''}`} role="status"><span aria-hidden="true" />{studio.saveState === 'error' ? 'Not saved' : recording ? 'Recording · save when stopped' : state === 'processing' ? 'Preparing take…' : studio.saveState === 'saved' ? 'Saved on this device' : 'Saving…'}</span></div>
       {studio.saveError && <div className="studio-save-error" role="alert"><p>{studio.saveError}</p><button className="text-button" onClick={() => void studio.retrySave()}>Retry save</button></div>}
+      {studio.cloudStatus && <div className="studio-cloud-status" role="status"><span>{studio.cloudStatus}</span>{studio.cloudError && <><p>{studio.cloudError}</p><button className="text-button" onClick={studio.retryCloud}>Retry backup</button></>}</div>}
       <div className="studio-body">
         <section className="studio-song" aria-labelledby="studio-song-title">
           <div className="studio-song-top">
@@ -111,7 +112,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
           <p className="studio-capture-footnote">{review ? 'This take autosaves before you keep it. Keep adds it to your song.' : 'Only your microphone is recorded. The click is a listening guide.'}</p>
         </aside>
       </div>
-      <footer className="studio-footer"><p>Songs stay in this browser. Download WAVs for a separate copy.</p><button className="text-button" disabled={studio.locked || studio.busy || !!studio.candidate || !studio.layers.at(-1)?.recorded} onClick={() => { studio.undoKeep(); setNotice('Moved the last layer back to review.'); }}><RotateCcw size={14} />Undo last keep</button></footer>
+      <footer className="studio-footer"><p>Saved on this device first. My songs has your backup options.</p><button className="text-button" disabled={studio.locked || studio.busy || !!studio.candidate || !studio.layers.at(-1)?.recorded} onClick={() => { studio.undoKeep(); setNotice('Moved the last layer back to review.'); }}><RotateCcw size={14} />Undo last keep</button></footer>
     </main>
     {studio.error && <div className="error-toast" role="alert"><span>{studio.error}</span><button onClick={() => studio.setError('')} aria-label="Dismiss message"><X size={18} /></button></div>}
   </div>;

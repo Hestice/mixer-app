@@ -46,7 +46,7 @@ The recording console has a shared waveform timeline, per-layer volume and solo 
 - `scripts/generate-demo.py`: reproducible synthesis of the four original demo parts and waveform data.
 - `PRODUCT_RESEARCH.md` and `LANDING_EXPERIENCE.md`: product research and the earlier storyboard.
 
-The interface works without the API. Audio stays in the browser, and the API has no recording upload endpoint.
+The interface works without the Nest API. Audio saves in the browser first. Optional Supabase backup uploads only selected songs to private storage; Nest has no recording upload endpoint.
 
 ## Current limits
 
@@ -78,3 +78,12 @@ Open `/studio` for an empty session, or enter from either recording action at th
 - A visual metronome is enabled by default. Sound requires an explicit headphone confirmation. Clicks route only to the listening output; the AudioWorklet captures only the microphone and outputs silence. Speaker or headphone leakage can still enter a physical microphone, so use wired headphones at a low volume. The app cannot detect the output device or guarantee acoustic isolation.
 - Microphone capture and backing-track starts share the AudioContext clock. Hardware input/output latency still depends on the device; hardware latency calibration is not yet implemented.
 - Recordings download as individual PCM WAV files. Sessions autosave locally and reopen from My songs. A full-song export is not yet implemented.
+
+
+## Cloud backup
+
+Supabase provides optional email sign-in, private recording storage, and revision-checked song backups. Existing local songs require explicit selection; automatic backup is a per-device preference for songs created while signed in. Unkept review takes are backed up too. Local saving never waits for a network request.
+
+My songs combines local and cloud entries. Opening a cloud song downloads and verifies its WAV files before saving the local copy. Divergent edits create a recovered version instead of replacing another device's song. Backup resumes while the app is open after an interruption or offline session.
+
+See [Supabase setup](supabase/SETUP.md) for the migration, environment variables, email-delivery configuration, operational limits, and verification steps. Magic links work with the default email template; code entry is available after configuring SMTP and the OTP template. Deployment needs the production callback URL added to Supabase's allowlist.
