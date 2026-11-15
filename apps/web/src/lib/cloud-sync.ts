@@ -1,6 +1,6 @@
 import { getSong } from './song-store';
 import { getBackup, updateBackup, installCloudSong, listBackups } from './backup-store';
-import { makeManifest, downloadManifest, type CloudManifest, type CloudSong } from './cloud-manifest';
+import { makeManifest, downloadManifest, manifestAudio, type CloudManifest, type CloudSong } from './cloud-manifest';
 
 export interface CloudTransport {
   get(id: string): Promise<CloudSong | null>;
@@ -24,7 +24,7 @@ export async function syncSong(id: string, ownerId: string, remote: CloudTranspo
   const cloud = await remote.get(link.remoteId);
   check();
   if (cloud && cloud.owner_id !== ownerId) throw new Error('The cloud song belongs to another account.');
-  const publishedAudio = new Set([...cloud?.content.layers ?? [], ...(cloud?.content.candidate ? [cloud.content.candidate] : [])].flatMap((layer) => layer.audio ? [layer.audio.path] : []));
+  const publishedAudio = new Set(cloud ? manifestAudio(cloud.content).map((audio) => audio.path) : []);
   // A response may have been lost after the server committed. Acknowledge that
   // exact operation before considering a fork or uploading a newer local edit.
   if (link.attempt && cloud?.commit_id === link.attempt.commitId) {

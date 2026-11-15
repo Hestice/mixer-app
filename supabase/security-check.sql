@@ -19,6 +19,14 @@ begin
     raise exception 'Stale write was accepted';
   exception when serialization_failure then null;
   end;
+  perform public.save_song('57ff070e-6f49-4a21-aa18-56547df63001', 1,
+    '57ff070e-6f49-4a21-aa18-56547df64003', '{"version":2,"title":"Multiple takes","layers":[]}');
+  begin
+    perform public.save_song('57ff070e-6f49-4a21-aa18-56547df63001', 2,
+      '57ff070e-6f49-4a21-aa18-56547df64004', '{"version":1,"title":"Old client","layers":[]}');
+    raise exception 'Old client erased the take collection';
+  exception when invalid_parameter_value then null;
+  end;
   begin
     update public.songs set revision = 999 where id = '57ff070e-6f49-4a21-aa18-56547df63001';
     raise exception 'Direct update bypassed the RPC';
@@ -50,4 +58,4 @@ begin
   if not exists(select 1 from pg_class where oid = 'public.songs'::regclass and relrowsecurity) then raise exception 'Song RLS is not enabled'; end if;
 end $$;
 rollback;
-select 'PASS: owner isolation, anonymous denial, revision conflicts, idempotency, private bucket' as result;
+select 'PASS: owner isolation, anonymous denial, revision conflicts, idempotency, v2 upgrade/downgrade protection, private bucket' as result;

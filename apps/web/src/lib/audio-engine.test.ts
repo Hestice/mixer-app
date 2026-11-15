@@ -15,8 +15,8 @@ class FakeBuffer {
 class FakeSource extends FakeNode {
   buffer: FakeBuffer | null = null; loop = false; loopEnd = 0; stopped = false;
   onended: (() => void) | null = null;
-  started: number[] = [];
-  start(when: number, offset: number) { this.started = [when, offset]; }
+  started: number[] = []; playDuration?: number;
+  start(when: number, offset: number, duration?: number) { this.started = [when, offset]; this.playDuration = duration; }
   stop() { this.stopped = true; }
 }
 class FakeContext {
@@ -179,5 +179,28 @@ test('the build adds keys then rhythm, and removes them in reverse without resta
     assert.equal(context.sources.length, 3);
     assert.ok(context.sources.every((source) => !source.stopped));
   }
+  engine.dispose();
+});
+
+
+test('trimmed layers schedule at their own start, then resume inside the chosen section', async () => {
+  const engine = new AudioEngine(); await engine.ready();
+  engine.addSamples('edited', new Float32Array(1000), 100);
+  const layers = [{ id: 'edited', name: 'Voice', kind: 'recording' as const, enabled: true, volume: 1, duration: 10, trimStart: 2, trimEnd: 7, startAt: 4 }];
+  engine.configureSession(layers); await engine.play(layers);
+  const context = FakeContext.current;
+  assert.equal(engine.duration, 9);
+  assert.deepEqual(context.sources[0].started, [4.04, 2]); assert.equal(context.sources[0].playDuration, 5);
+  context.currentTime = 6.04; engine.pause(); await engine.play(layers);
+  assert.deepEqual(context.sources[1].started, [6.08, 4]); assert.equal(context.sources[1].playDuration, 3);
+  context.currentTime = 9.08; context.sources[1].onended?.(); assert.equal(engine.playing, false);
+  engine.dispose();
+});
+test('auditioning from before an offset layer starts skips earlier parts without changing the arrangement', async () => {
+  const engine = new AudioEngine(); await engine.ready(); engine.addSamples('late', new Float32Array(500), 100);
+  const layers = [{ id: 'late', name: 'Late', kind: 'recording' as const, enabled: true, volume: 1, duration: 5, trimStart: 1, trimEnd: 3, startAt: 20 }];
+  engine.configureSession(layers); await engine.play(layers, true, 19);
+  assert.deepEqual(FakeContext.current.sources[0].started, [1.04, 1]);
+  assert.equal(FakeContext.current.sources[0].playDuration, 2); assert.equal(engine.position, 18.96);
   engine.dispose();
 });

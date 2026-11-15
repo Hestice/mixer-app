@@ -8,7 +8,7 @@ Copy `apps/web/.env.example` to `apps/web/.env.local` and fill in the project's 
 
 ## Database and private recordings
 
-Run `supabase/migrations/202611150001_cloud_backup.sql` in the project's SQL editor. It creates the `songs` table, owner-only read policy, revision-checked `save_song` function, and private `recordings` bucket. The app cannot update or delete audio objects; immutable SHA-256 paths allow safe retries. A song manifest is published only after its files upload.
+Run `supabase/migrations/202611150001_cloud_backup.sql`, then `supabase/migrations/202611150002_multiple_takes.sql` in the project's SQL editor. It creates the `songs` table, owner-only read policy, revision-checked `save_song` function, and private `recordings` bucket. The app cannot update or delete audio objects; immutable SHA-256 paths allow safe retries. A song manifest is published only after its files upload.
 
 The bucket limit is 50 MB per WAV. Larger takes remain saved locally and available for download, but display a backup error. Interrupted uploads retry from the local file when the app is open; this is not background browser sync or a byte-resumable uploader. Superseded audio objects are retained for now; storage cleanup and cloud deletion need a future retention policy.
 
@@ -49,3 +49,11 @@ Run `pnpm --filter @audio-app/web test`, `typecheck`, and `build`. Cloud tests u
 
 
 Verified on the configured hosted project: the migration applied successfully, the transactional security check passed, and the signed-in synthetic song uploaded both WAVs (one kept layer plus one review take). Downloading both private objects produced matching SHA-256 hashes. No test identities or rows from the transactional security check remain.
+
+## Take editing
+
+The second migration is applied to the hosted mixer-app project. Version 2 manifests preserve every attempt, the selected take, reversible trim bounds, layer start times, and a replacement take still under review. Version 1 songs remain readable. The save function rejects version 2 → 1 downgrades so an older open app cannot erase the take collection; reload before editing these songs on another device.
+
+All audio stays immutable. Trimming and placement change metadata; each take keeps its original WAV and its own edits. Backup hashes and uploads all alternatives before publishing a revision. Repeated references share the same audio object. Downloads validate every reference and hash before installing the song locally. Downloads labeled Original WAV contain the full selected recording, not a rendered mix or a trimmed export.
+
+Verified against hosted Supabase with a synthetic song: four recordings across two take collections (including a pending review take) uploaded, then restored after removing only that fully synced local test copy. Audio hashes, selected takes, trim bounds, and placement matched. The transactional security test also passed the version upgrade and downgrade checks.

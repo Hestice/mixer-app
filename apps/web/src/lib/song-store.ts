@@ -1,8 +1,10 @@
+import { clipBounds } from './clip-edits';
 import type { Layer } from './session';
 import type { MetronomeMode } from './metronome';
 
 export interface SongContent {
   title: string;
+  retakeLayerId?: string;
   layers: Layer[];
   candidate: Layer | null;
   withDemo: boolean;
@@ -130,7 +132,7 @@ export function summarizeSong(song: SavedSong): SongSummary {
   return { id: song.id, ownerId: song.ownerId, createdAt: song.createdAt, revision: song.revision,
     title: song.title.trim() || 'Untitled song', updatedAt: song.updatedAt,
     layerCount: song.layers.length, hasTake: !!song.candidate,
-    duration: Math.max(0, ...song.layers.map((layer) => layer.duration ?? 80 / 7), song.candidate?.duration ?? 0) };
+    duration: Math.max(0, ...song.layers.map((layer) => clipBounds(layer).end), song.candidate ? clipBounds(song.candidate).end : 0) };
 }
 
 export function songChanged() {

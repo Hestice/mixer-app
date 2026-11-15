@@ -2,13 +2,22 @@ import demoPeaks from './demo-peaks.json';
 import { layerReveal, STORY_BOUNDARIES } from './story-motion';
 
 export type LayerKind = 'guitar' | 'keys' | 'rhythm' | 'harmony' | 'recording';
-export interface Layer {
+export interface ClipEdits { trimStart?: number; trimEnd?: number; startAt?: number }
+export interface RecordingTake extends ClipEdits {
+  id: string;
+  blob?: Blob;
+  peaks?: number[];
+  duration: number;
+}
+export interface Layer extends ClipEdits {
   id: string;
   name: string;
   kind: LayerKind;
   enabled: boolean;
   volume: number;
   recorded?: boolean;
+  takeId?: string;
+  takes?: RecordingTake[];
   blob?: Blob;
   peaks?: number[];
   duration?: number;

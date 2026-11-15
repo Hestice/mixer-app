@@ -151,3 +151,19 @@
 @media(max-width:650px) { .cloud-account { grid-template-columns: 1fr; padding: 20px; gap: 18px; }.cloud-selection { align-items: flex-start; flex-direction: column; gap: 6px; }.song-select-row { gap: 10px; }.studio-cloud-status { padding: 12px 22px; } }
 
 .studio-app .button-primary { background: #35432e; color: #fff; }.studio-app .button-primary:hover { background: #25311f; }.studio-app .button-secondary { border: 1px solid #bfcbb4; background: #f1f4eb; }
+
+/* Tape-like clips sit beside the record; originals remain in the take drawer. */
+.take-picker { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:11px; color:#526447; margin:12px 0; }
+.take-picker select { max-width:100%; padding:7px 9px; border:1px solid #becbb1; border-radius:6px; background:#f7f8f1; color:var(--ink); font:inherit; }
+.take-picker>span { margin-left:auto; font-size:10px; color:var(--muted); }
+.clip-editor { min-width:0; }.clip-lane { position:relative; height:64px; overflow:visible; margin:12px 0 7px; background:repeating-linear-gradient(90deg,#dce3d4 0 1px,transparent 1px 25%),#e9ede2; border-radius:6px; }
+.clip-body { position:absolute; height:100%; min-width:12px; border:1px solid #8b9c78; border-radius:5px; background:linear-gradient(#e4ead8,#d5dfc7); box-shadow:0 2px 4px #3d4d2d15; padding:8px 5px; cursor:grab; touch-action:none; overflow:hidden; }
+.clip-body:active { cursor:grabbing; }.clip-body .waveform { width:100%; height:100%; gap:2px; }.clip-body .waveform i { max-width:none; background:#81946c; }.clip-body .wave-playhead { display:none; }.clip-grip { position:absolute; bottom:1px; left:50%; font-size:12px; color:#566d41; }
+.clip-caption { display:flex; justify-content:space-between; gap:10px; font-size:10px; color:var(--muted); line-height:1.6; }.clip-caption small { font:inherit; }
+.clip-details { margin-top:12px; border-top:1px solid #d7dfce; }.clip-details summary { padding:12px 0; cursor:pointer; font-size:11px; color:#526447; }.clip-details .studio-help { margin:0 0 16px; }
+.trim-lane { position:relative; height:64px; margin:0 11px 18px; background:#e1e8d6; border-radius:4px; }.trim-lane>.waveform { height:100%; padding:9px 0; gap:2px; }.trim-lane .waveform i { max-width:none; background:#81946c; }.trim-lane .wave-playhead { display:none; }.trim-shade { position:absolute; top:0; bottom:0; background:#f7f8f2c9; pointer-events:none; }.trim-selection { position:absolute; top:0; bottom:0; border-top:2px solid #697f54; border-bottom:2px solid #697f54; pointer-events:none; }
+.trim-handle { position:absolute; top:0; bottom:0; width:22px; transform:translateX(-50%); display:grid; place-items:center; cursor:ew-resize; touch-action:none; z-index:2; border-radius:4px; background:#5d734b; color:white; box-shadow:0 1px 3px #35432e33; }.trim-handle span { width:4px; height:20px; border-left:1px solid #d5dfc7; border-right:1px solid #d5dfc7; }
+.clip-numbers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }.clip-numbers label { font-size:10px; color:#526447; display:flex; flex-direction:column; gap:6px; }.clip-numbers input { width:100%; min-width:0; border:1px solid #c7d1bb; padding:8px 5px; border-radius:6px; color:var(--ink); background:#fafbf6; font:12px var(--font); }.clip-numbers label>span { font-size:9px; color:var(--muted); }.clip-reset { margin:14px 0 8px; font-size:11px; }
+.studio-take .clip-editor { margin:16px 0; }.studio-take .take-picker { display:flex; font-size:11px; }.studio-track.is-muted .clip-body { opacity:.5; }
+.clip-editor button:focus-visible,.clip-details summary:focus-visible,.take-picker select:focus-visible,.clip-numbers input:focus-visible { outline:3px solid #9b7746; outline-offset:3px; }
+@media(pointer:coarse) { .trim-handle { width:28px; }.clip-lane,.trim-lane { height:76px; } }

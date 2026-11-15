@@ -1,3 +1,4 @@
+import { clipBounds, playbackWindow } from './clip-edits';
 import { extractPeaks, type Layer } from './session';
 
 /** The tour loops; the recording workspace plays each part once on a shared clock. */
@@ -60,7 +61,7 @@ export class AudioEngine {
   configureSession(layers: Layer[]) {
     this.reset();
     this.looping = false;
-    this.loopDuration = Math.max(0, ...layers.map((layer) => layer.duration ?? this.buffers.get(layer.id)?.duration ?? (layer.recorded ? 0 : 80 / 7)));
+    this.loopDuration = Math.max(0, ...layers.map((layer) => clipBounds({ ...layer, duration: layer.duration ?? this.buffers.get(layer.id)?.duration }).end));
   }
 
   removeRecording(id: string) { this.buffers.delete(id); }
@@ -80,9 +81,10 @@ export class AudioEngine {
     return this.looping ? elapsed % this.loopDuration : Math.min(elapsed, this.loopDuration);
   }
 
-  async play(layers: Layer[], restart = false) {
+  async play(layers: Layer[], restart = false, from?: number) {
     const context = await this.ready();
-    if (restart) this.pausedAt = 0;
+    if (!this.looping) this.loopDuration = Math.max(0, ...layers.map((layer) => clipBounds(layer).end));
+    if (restart) this.pausedAt = from ?? 0;
     this.stopSources();
     const offset = this.looping ? this.pausedAt % this.loopDuration : this.pausedAt >= this.loopDuration ? 0 : this.pausedAt;
     const when = context.currentTime + 0.04;
@@ -106,7 +108,8 @@ export class AudioEngine {
   private attach(layer: Layer, when: number, offset: number) {
     const buffer = this.buffers.get(layer.id);
     if (!buffer || !this.context || !this.master) return;
-    if (!this.looping && offset >= buffer.duration) return;
+    const window = playbackWindow({ ...layer, duration: buffer.duration }, offset);
+    if (!this.looping && !window) return;
     const source = this.context.createBufferSource();
     const gain = this.context.createGain();
     // Pad shorter takes so they repeat on the composition boundary, not their own length.
@@ -123,7 +126,8 @@ export class AudioEngine {
     gain.gain.value = layer.enabled ? layer.volume : 0;
     source.connect(gain);
     gain.connect(this.master);
-    source.start(when, offset);
+    if (this.looping) source.start(when, offset);
+    else source.start(when + window!.delay, window!.offset, window!.duration);
     this.sources.set(layer.id, { source, gain });
     if (!this.looping) source.onended = () => {
       // A stopped or replaced source must not end a later playback session.

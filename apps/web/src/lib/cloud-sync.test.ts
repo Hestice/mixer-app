@@ -5,6 +5,7 @@ import { saveSong, getSong, SongWriter, type SongContent } from './song-store';
 import { enableBackup, getBackup, removeDownloadedCopies } from './backup-store';
 import { syncSong, openCloudSong, CloudConflictError, SyncCanceledError, type CloudTransport } from './cloud-sync';
 import { makeManifest, downloadManifest, type CloudSong } from './cloud-manifest';
+import { appendTake, editClip, selectTake } from './clip-edits';
 import { encodeWav } from './wav';
 
 const content = (): SongContent => ({ title: 'Evening', layers: [], candidate: { id: crypto.randomUUID(), name: 'Voice', kind: 'recording', recorded: true, enabled: true, volume: .8, duration: 1, peaks: [.3], blob: encodeWav(new Float32Array([.2, -.4, .6]), 44100) }, withDemo: false, volume: .6, partName: 'Voice', tempo: 84, countIn: true, metronomeMode: 'visual' });
@@ -159,4 +160,41 @@ test('mix and title edits reuse published immutable audio instead of uploading i
   assert.equal(uploads, 1);
   assert.equal(f.songs.get(f.id)?.content.title, 'Renamed song');
   assert.equal((await getBackup(f.id))?.syncedLocalRevision, 2);
+});
+
+
+test('all takes, edits, and a pending replacement survive autosave and cloud restore', async () => {
+  const f = await fixture();
+  const first = editClip(f.song.candidate!, { trimStart: .1, trimEnd: .8, startAt: 2 });
+  const second = editClip(appendTake(first, { id: 'alternative', duration: 2, blob: encodeWav(new Float32Array([.1, .3]), 44100), peaks: [.8] }), { trimStart: .2, trimEnd: 1.6, startAt: 4 });
+  await saveSong(f.id, 1, { ...f.song, layers: [first], candidate: second, retakeLayerId: first.id });
+  const local = (await getSong(f.id))!; assert.equal(local.candidate?.takes?.length, 2);
+  await syncSong(f.id, f.owner, f.remote);
+  assert.equal(f.audio.size, 2, 'shared originals upload only once');
+  assert.equal(f.songs.get(f.id)?.content.version, 2);
+  const restored = await downloadManifest(f.songs.get(f.id)!.content, f.owner, f.remote.download);
+  assert.equal(restored.retakeLayerId, first.id); assert.equal(restored.candidate?.takes?.length, 2);
+  assert.equal(restored.candidate?.startAt, 4); assert.equal(restored.candidate?.trimEnd, 1.6);
+  const old = selectTake(restored.candidate!, first.id);
+  assert.equal(old.startAt, 2); assert.equal(old.trimStart, .1);
+  assert.deepEqual(await old.blob!.arrayBuffer(), await first.blob!.arrayBuffer());
+  let uploads = 0; f.remote.upload = async () => { uploads++; };
+  await saveSong(f.id, 2, { ...local, candidate: editClip(second, { startAt: 8 }) });
+  await syncSong(f.id, f.owner, f.remote); assert.equal(uploads, 0);
+});
+test('failure uploading a nonselected take leaves the previous cloud revision and all local takes intact', async () => {
+  const f = await fixture(); await syncSong(f.id, f.owner, f.remote);
+  const multiple = appendTake(f.song.candidate!, { id: 'new', duration: 1, blob: new Blob(['new audio']) });
+  await saveSong(f.id, 1, { ...f.song, candidate: selectTake(multiple, f.song.candidate!.id) });
+  f.remote.upload = async () => { throw new Error('offline'); };
+  await assert.rejects(syncSong(f.id, f.owner, f.remote));
+  assert.equal(f.songs.get(f.id)?.revision, 1); assert.equal((await getSong(f.id))?.candidate?.takes?.length, 2);
+});
+test('legacy cloud recordings still restore and invalid alternate references cannot download', async () => {
+  const f = await fixture(); const manifest = await makeManifest(f.song, f.owner, f.remote.upload);
+  const legacy = structuredClone(manifest); legacy.version = 1; delete legacy.candidate!.takes; delete legacy.candidate!.takeId;
+  assert.ok((await downloadManifest(legacy, f.owner, f.remote.download)).candidate?.blob);
+  manifest.candidate!.takes![0].audio!.path = 'foreign/audio.wav'; let downloads = 0;
+  await assert.rejects(downloadManifest(manifest, f.owner, async () => { downloads++; return new Blob(); }), /invalid/);
+  assert.equal(downloads, 0);
 });
