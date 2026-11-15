@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { storyGeometry, layerReveal, stylusPosition, TONEARM, STORY_STOPS, CHAPTER_STOPS, tourBuildStage, STORY_BOUNDARIES, harmonyTravelTime } from './story-motion';
+import { storyGeometry, layerReveal, stylusPosition, TONEARM, STORY_STOPS, CHAPTER_STOPS, tourBuildStage, STORY_BOUNDARIES, storyTransitionDuration } from './story-motion';
 
 test('the playing stylus sits in the groove annulus, never on the label; resting is off the record', () => {
   const radius = (angle: number) => { const p = stylusPosition(angle); return Math.hypot(p.x - 50, p.y - 50); };
@@ -82,12 +82,33 @@ test('harmony travels during scrolling and reaches the song before the recording
 });
 
 
-test('harmony gets readable travel time even when one input crosses the entire scene', () => {
-  assert.equal(harmonyTravelTime(.27, .4), 0);
-  assert.equal(harmonyTravelTime(.4, .5), 0);
-  assert.equal(harmonyTravelTime(.7, 1), 2.4);
-  assert.equal(harmonyTravelTime(1, .7), 2.4);
-  assert.ok(harmonyTravelTime(.81, 1) > 1.19);
-  assert.ok(harmonyTravelTime(.81, 1) < 1.21);
-  assert.equal(harmonyTravelTime(.94, 1), 0);
+test('settling duration follows the remaining fraction of every anchor interval in both directions', () => {
+  for (let index = 1; index < STORY_STOPS.length; index++) {
+    const left = STORY_STOPS[index - 1];
+    const right = STORY_STOPS[index];
+    const fullDuration = index === STORY_STOPS.length - 1 ? 2 : 1.5;
+    for (const fraction of [0, .1, .5, .9, 1]) {
+      const forward = left + (right - left) * fraction;
+      const backward = right - (right - left) * fraction;
+      const expected = fullDuration * (1 - fraction);
+      assert.ok(Math.abs(storyTransitionDuration(forward, right) - expected) < 1e-9);
+      assert.ok(Math.abs(storyTransitionDuration(backward, left) - expected) < 1e-9);
+    }
+  }
+});
+
+test('resuming a partly completed settle uses only its remaining distance', () => {
+  assert.ok(Math.abs(storyTransitionDuration(.45, .5) - .75) < 1e-9);
+  assert.ok(Math.abs(storyTransitionDuration(.475, .5) - .375) < 1e-9);
+  assert.ok(Math.abs(storyTransitionDuration(.85, 1) - 1) < 1e-9);
+  assert.ok(Math.abs(storyTransitionDuration(.97, 1) - .2) < 1e-9);
+});
+
+test('chapter jumps stay bounded and settled positions need no animation', () => {
+  assert.equal(storyTransitionDuration(0, 1), 2);
+  assert.equal(storyTransitionDuration(1, 0), 2);
+  assert.equal(storyTransitionDuration(0, .5), 1.5);
+  STORY_STOPS.forEach((stop) => assert.equal(storyTransitionDuration(stop, stop), 0));
+  assert.equal(storyTransitionDuration(-1, 0), 0);
+  assert.equal(storyTransitionDuration(2, 1), 0);
 });

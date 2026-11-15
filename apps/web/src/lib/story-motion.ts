@@ -72,8 +72,21 @@ export function stylusPosition(angle: number) {
 }
 
 
-/** Reserve readable travel time for Harmony, including large wheel gestures. */
-export function harmonyTravelTime(from: number, to: number) {
-  const overlap = Math.max(0, Math.min(Math.max(from, to), .90) - Math.max(Math.min(from, to), .72));
-  return overlap / (.90 - .72) * 2.4;
+/** Scale settling time by the fraction remaining between adjacent anchors. */
+export function storyTransitionDuration(from: number, to: number) {
+  const start = Math.min(clamp(from), clamp(to));
+  const end = Math.max(clamp(from), clamp(to));
+  let seconds = 0;
+  let longestTransition = 0;
+  for (let index = 1; index < STORY_STOPS.length; index++) {
+    const left = STORY_STOPS[index - 1];
+    const right = STORY_STOPS[index];
+    const overlap = Math.max(0, Math.min(end, right) - Math.max(start, left));
+    if (!overlap) continue;
+    const fullDuration = index === STORY_STOPS.length - 1 ? 2 : 1.5;
+    seconds += overlap / (right - left) * fullDuration;
+    longestTransition = Math.max(longestTransition, fullDuration);
+  }
+  // Chapter navigation can skip anchors without accumulating a long animation.
+  return Math.min(seconds, longestTransition);
 }
