@@ -1,22 +1,36 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AudioEngine } from '../lib/audio-engine';
 import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
+import { MicrophoneRecorder } from '../lib/microphone-recorder';
+import { Metronome, canSoundClick, type MetronomeMode } from '../lib/metronome';
+import { encodeWav } from '../lib/wav';
+import { getSong, SongWriter, storageMessage, type SongContent } from '../lib/song-store';
 
 export type RecordingState = 'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'processing' | 'review';
 
-export function useStudio() {
+export function useStudio(startInWorkspace = false) {
   const engineRef = useRef<AudioEngine | null>(null);
   const getEngine = () => engineRef.current ?? (engineRef.current = new AudioEngine());
   const tourChapterRef = useRef(0);
-  const [layers, setLayers] = useState<Layer[]>(demoLayers);
+  const [layers, setLayers] = useState<Layer[]>(startInWorkspace ? [] : demoLayers);
   const [candidate, setCandidate] = useState<Layer | null>(null);
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [workspace, setWorkspace] = useState(false);
+  const [workspace, setWorkspace] = useState(startInWorkspace);
   const [withDemo, setWithDemo] = useState(false);
+  const [title, setTitle] = useState('Untitled song');
+  const [localReady, setLocalReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [savedContent, setSavedContent] = useState<SongContent | null>(null);
+  const writerRef = useRef<SongWriter | null>(null);
+  const saveVersion = useRef(0);
+  const persistedContent = useRef<SongContent | null>(null);
+  const restoredContent = useRef(false);
+  const decodedRecordings = useRef(new Set<string>());
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [countdown, setCountdown] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -25,46 +39,147 @@ export function useStudio() {
   const [volume, setVolumeState] = useState(0.65);
   const [previewCandidate, setPreviewCandidate] = useState(true);
   const [soloId, setSoloId] = useState<string | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const monitorRef = useRef<AudioContext | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [partName, setPartName] = useState('Guitar');
+  const [tempo, setTempo] = useState(84);
+  const [countIn, setCountIn] = useState(true);
+  const [metronomeMode, setMetronomeMode] = useState<MetronomeMode>('visual');
+  const [headphones, setHeadphones] = useState(false);
+  const [beat, setBeat] = useState(-1);
+  const [metronomePreview, setMetronomePreview] = useState(false);
+  const [livePeaks, setLivePeaks] = useState<number[]>([]);
+  const [microphoneLabel, setMicrophoneLabel] = useState('Microphone not connected');
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [inputDevice, setInputDevice] = useState('');
+  const recorderRef = useRef<MicrophoneRecorder | null>(null);
+  const metronomeRef = useRef<Metronome | null>(null);
+  const levelRef = useRef(0);
+  const runRef = useRef(0);
+  const stoppingRef = useRef(false);
   const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const disposed = useRef(false);
   const hasRecordings = layers.some((layer) => layer.recorded) || !!candidate?.recorded;
-  const locked = ['requesting', 'countdown', 'recording', 'processing'].includes(recordingState);
-  const mix = [...layers, ...(candidate ? [{ ...candidate, enabled: previewCandidate }] : [])].map((layer) => ({
+  const locked = (workspace && !localReady) || ['requesting', 'countdown', 'recording', 'processing'].includes(recordingState);
+  const mix = [...layers, ...(candidate && (!workspace || recordingState === 'review' && previewCandidate) ? [{ ...candidate, enabled: previewCandidate }] : [])].map((layer) => ({
     ...layer, enabled: soloId ? layer.id === soloId : layer.enabled,
   }));
   const mixRef = useRef(mix);
   mixRef.current = mix;
 
-  useEffect(() => { engineRef.current?.sync(mix); }, [layers, candidate, previewCandidate, soloId, playing]); // eslint-disable-line react-hooks/exhaustive-deps
+  const content = useMemo<SongContent>(() => ({ title, layers, candidate, withDemo, volume, partName, tempo, countIn, metronomeMode }),
+    [title, layers, candidate, withDemo, volume, partName, tempo, countIn, metronomeMode]);
+  const contentRef = useRef(content);
+  contentRef.current = content;
+  const saveState = !localReady ? 'loading' : saveError ? 'error' : savedContent === content ? 'saved' : 'saving';
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('song');
+    if (!workspace) { if (id) setWorkspace(true); return; }
+    if (writerRef.current) return;
+    let canceled = false;
+    if (!id) {
+      const nextId = crypto.randomUUID();
+      writerRef.current = new SongWriter(nextId);
+      const url = new URL(window.location.href);
+      url.searchParams.set('song', nextId);
+      window.history.replaceState(window.history.state, '', url);
+      setLocalReady(true);
+    } else {
+      void getSong(id).then((song) => {
+        if (canceled) return;
+        if (!song) { setLoadError('This song is not on this browser. It may have been saved on another device, or its browser data was cleared.'); return; }
+        writerRef.current = new SongWriter(id, song.revision);
+        setTitle(song.title); setLayers(song.layers); setCandidate(song.candidate);
+        setWithDemo(song.withDemo); setVolumeState(song.volume); setPartName(song.partName);
+        setTempo(song.tempo); setCountIn(song.countIn);
+        // Headphones must be confirmed again before any audible click.
+        setMetronomeMode(song.metronomeMode === 'sound' ? 'visual' : song.metronomeMode);
+        setRecordingState(song.candidate ? 'review' : 'idle'); setPreviewCandidate(false);
+        getEngine().configureSession(song.layers);
+        restoredContent.current = true;
+        setLocalReady(true);
+      }).catch(() => { if (!canceled) setLoadError('Your songs could not be opened. Check that browser storage is available, then reload to try again.'); });
+    }
+    return () => { canceled = true; };
+  }, [workspace]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function persistSong(snapshot = contentRef.current) {
+    if (!writerRef.current) return false;
+    const version = ++saveVersion.current;
+    setSaveError('');
+    try {
+      await writerRef.current.write(snapshot);
+      if (!disposed.current && version === saveVersion.current) { persistedContent.current = snapshot; setSavedContent(snapshot); }
+      return true;
+    } catch (reason) {
+      if (!disposed.current && version === saveVersion.current) setSaveError(storageMessage(reason));
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (!workspace || !localReady) return;
+    if (restoredContent.current) { restoredContent.current = false; persistedContent.current = content; setSavedContent(content); return; }
+    void persistSong(content);
+  }, [content, workspace, localReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function openMySongs() {
+    if (locked || busy) return;
+    stopMetronome(); getEngine().reset(); setPlaying(false); setBusy(true);
+    try {
+      let snapshot = contentRef.current;
+      while (true) {
+        if (!(savedContent === snapshot && !saveError) && !await persistSong(snapshot)) return;
+        if (snapshot === contentRef.current) break;
+        snapshot = contentRef.current;
+      }
+      releaseMicrophone(); window.location.assign('/songs');
+    } finally { if (!disposed.current) setBusy(false); }
+  }
+
+  async function prepareAudio() {
+    const engine = getEngine();
+    if (!workspace || withDemo) await engine.loadDemo();
+    for (const layer of [...layers, ...(candidate ? [candidate] : [])]) {
+      if (layer.recorded && layer.blob && !decodedRecordings.current.has(layer.id)) {
+        await engine.addRecording(layer.id, layer.blob);
+        decodedRecordings.current.add(layer.id);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (workspace && ['countdown', 'recording', 'processing'].includes(recordingState)) return;
+    engineRef.current?.sync(mix);
+  }, [layers, candidate, previewCandidate, soloId, playing, recordingState, workspace]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     disposed.current = false;
-    const interval = setInterval(() => setPosition(engineRef.current?.position ?? 0), 100);
+    const interval = setInterval(() => {
+      setPosition(engineRef.current?.position ?? 0);
+      setPlaying(engineRef.current?.playing ?? false);
+    }, 80);
     return () => {
       disposed.current = true;
       clearInterval(interval);
-      if (countdownRef.current) clearInterval(countdownRef.current);
+      runRef.current++;
       if (recordingTimer.current) clearInterval(recordingTimer.current);
-      if (stopTimer.current) clearTimeout(stopTimer.current);
-      if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      void monitorRef.current?.close();
+      if (previewTimer.current) clearInterval(previewTimer.current);
+      recorderRef.current?.dispose(); recorderRef.current = null;
+      metronomeRef.current?.stop();
       engineRef.current?.dispose();
       engineRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (!hasRecordings && recordingState !== 'recording') return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    if (!workspace || (saveState === 'saved' && !['countdown', 'recording', 'processing'].includes(recordingState))) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      if (persistedContent.current !== contentRef.current || ['countdown', 'recording', 'processing'].includes(recordingState)) event.preventDefault();
+    };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [hasRecordings, recordingState]);
+  }, [workspace, saveState, recordingState]);
 
   const applyTourScene = useCallback((chapter: number, buildStage: 0 | 1 | 2) => {
     if (workspace) return;
@@ -85,8 +200,12 @@ export function useStudio() {
     if (playing) { engine.pause(); setPlaying(false); return; }
     setBusy(true);
     try {
-      if (!workspace || withDemo) await engine.loadDemo();
-      await engine.play(mixRef.current);
+      await prepareAudio();
+      if (workspace && !layers.length) return;
+      if (workspace && previewCandidate) {
+        engine.configureSession(layers); setPreviewCandidate(false); setSoloId(null);
+        await engine.play(layers);
+      } else await engine.play(mixRef.current);
       engine.volume(volume);
       setPlaying(true);
     } catch (reason) { report(reason); }
@@ -98,10 +217,10 @@ export function useStudio() {
     const next = layers.map((layer) => layer.id === id ? { ...layer, enabled: !layer.enabled } : layer);
     setSoloId(null); setLayers(next);
     // An explicit enable action should be audible even if the song was paused.
-    if (!playing && next.find((layer) => layer.id === id)?.enabled) {
+    if (!workspace && !playing && next.find((layer) => layer.id === id)?.enabled) {
       setBusy(true); setError('');
       try {
-        if (!workspace || withDemo) await getEngine().loadDemo();
+        await prepareAudio();
         await getEngine().play(mixRef.current);
         getEngine().volume(volume); setPlaying(true);
       } catch (reason) { report(reason); }
@@ -131,7 +250,7 @@ export function useStudio() {
     if (playing) { setPreviewCandidate(!audible); return; }
     setBusy(true); setError('');
     try {
-      if (!workspace || withDemo) await getEngine().loadDemo();
+      await prepareAudio();
       setPreviewCandidate(true);
       await getEngine().play(mixRef.current);
       getEngine().volume(volume); setPlaying(true);
@@ -146,136 +265,212 @@ export function useStudio() {
 
   function keepCandidate() {
     if (!candidate || locked) return;
-    if (!layers.length && candidate.recorded) {
-      // The first freely timed recording defines the composition's loop.
-      getEngine().reset(); setPlaying(false);
-    }
+    if (workspace) { getEngine().configureSession([...layers, candidate]); setPlaying(false); }
     setLayers((current) => commitLayer(current, candidate));
     setCandidate(null); setSoloId(null); setPreviewCandidate(true);
     setRecordingState('idle');
+    if (workspace) setPartName(layers.length === 0 ? 'Vocals' : `Layer ${layers.length + 2}`);
   }
 
   function enterWorkspace(useDemo: boolean) {
     if (workspace || busy || locked) return;
     getEngine().reset(); setPlaying(false); setError('');
-    setWorkspace(true); setWithDemo(useDemo); setCandidate(null); setSoloId(null);
+    setWorkspace(true); setWithDemo(useDemo); setTitle(useDemo ? 'After hours · my version' : 'Untitled song'); setCandidate(null); setSoloId(null);
     setLayers(useDemo ? layers : []);
     setRecordingState('idle');
-    if (useDemo) getEngine().setLoopDuration(80 / 7);
+    getEngine().configureSession(useDemo ? layers : []);
   }
 
-  async function enableMicrophone() {
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setError('Recording needs a browser with microphone support on HTTPS or localhost. You can still explore the demo.'); return;
-    }
-    setError(''); setRecordingState('requesting');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-      if (disposed.current) { stream.getTracks().forEach((track) => track.stop()); return; }
-      streamRef.current = stream;
-      const context = new AudioContext();
-      monitorRef.current = context;
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser(); analyser.fftSize = 256;
-      source.connect(analyser); // Intentionally never connected to speakers.
-      const data = new Float32Array(analyser.fftSize);
-      const measure = () => {
-        if (context.state === 'closed' || disposed.current) return;
-        analyser.getFloatTimeDomainData(data);
-        setInputLevel(Math.min(1, Math.sqrt(data.reduce((sum, sample) => sum + sample * sample, 0) / data.length) * 5));
-        requestAnimationFrame(measure);
-      };
-      measure();
-      setRecordingState('ready');
-    } catch (reason) {
-      setRecordingState(candidate ? 'review' : 'idle');
-      const name = reason instanceof DOMException ? reason.name : '';
-      setError(name === 'NotAllowedError' ? 'Microphone access was declined. Allow it in your browser site settings, then try again.' : name === 'NotFoundError' ? 'No microphone was found. Connect one and try again.' : 'Could not open the microphone. Check that another app is not using it.');
-    }
+  function stopMetronome() {
+    metronomeRef.current?.stop();
+    if (previewTimer.current) clearInterval(previewTimer.current);
+    previewTimer.current = null;
+    setMetronomePreview(false); setBeat(-1);
   }
 
-  const releaseMicrophone = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    void monitorRef.current?.close(); monitorRef.current = null;
-    setInputLevel(0);
-  }, []);
+  function releaseMicrophone() {
+    recorderRef.current?.dispose(); recorderRef.current = null;
+    levelRef.current = 0; setInputLevel(0);
+    setMicrophoneLabel('Microphone not connected');
+  }
 
-  function stopRecording() {
-    if (stopTimer.current) clearTimeout(stopTimer.current);
-    if (recordingTimer.current) clearInterval(recordingTimer.current);
-    if (recorderRef.current?.state === 'recording') { setRecordingState('processing'); recorderRef.current.stop(); }
+  async function enableMicrophone(deviceId = inputDevice) {
+    if (locked || busy) return;
+    if (!navigator.mediaDevices?.getUserMedia || !window.AudioWorkletNode) {
+      setError('Recording needs microphone support on HTTPS or localhost. Try a current Safari, Chrome, Edge or Firefox.'); return;
+    }
+    const run = ++runRef.current;
+    stopMetronome(); releaseMicrophone();
     getEngine().reset(); setPlaying(false);
-  }
-
-  async function beginTake() {
-    const stream = streamRef.current;
-    if (!stream) return;
+    setError(''); setRecordingState('requesting');
+    let stream: MediaStream | undefined;
     try {
-      const mimeType = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((type) => MediaRecorder.isTypeSupported(type));
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const context = await getEngine().ready();
+      stream = await navigator.mediaDevices.getUserMedia({ audio: {
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      } });
+      if (disposed.current || run !== runRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      const recorder = await MicrophoneRecorder.open(context, stream, (value) => {
+        if (run !== runRef.current || disposed.current) return;
+        levelRef.current = value; setInputLevel(value);
+      }, (reason) => {
+        runRef.current++;
+        if (recordingTimer.current) clearInterval(recordingTimer.current);
+        stopMetronome(); releaseMicrophone(); getEngine().reset(); setPlaying(false);
+        report(reason); setRecordingState(candidate ? 'review' : 'idle');
+      });
+      if (disposed.current || run !== runRef.current) { recorder.dispose(); return; }
       recorderRef.current = recorder;
-      const chunks: BlobPart[] = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-      recorder.onerror = () => { setError('The recording was interrupted. Your previous layers are still here.'); stopRecording(); };
-      recorder.onstop = async () => {
-        releaseMicrophone();
-        if (disposed.current) return;
-        try {
-          const blob = new Blob(chunks, { type: recorder.mimeType });
-          if (blob.size < 100) throw new Error('That take was too short. Try recording a little longer.');
-          const id = `take-${crypto.randomUUID()}`;
-          const duration = await getEngine().addRecording(id, blob);
-          if (!layers.length) getEngine().setLoopDuration(duration);
-          setCandidate({ id, name: `Take ${layers.filter((layer) => layer.recorded).length + 1}`, kind: 'recording', enabled: true, volume: 0.85, recorded: true, blob, peaks: getEngine().peaks(id) });
-          setPreviewCandidate(true); setSoloId(null); setRecordingState('review');
-        } catch (reason) { report(reason); setRecordingState(candidate ? 'review' : 'idle'); }
-      };
-      getEngine().reset();
-      if (layers.length) {
-        if (withDemo) await getEngine().loadDemo();
-        await getEngine().play(layers, true);
-        setPlaying(true);
-      }
-      recorder.start(100);
-      setElapsed(0); setRecordingState('recording');
-      const started = Date.now();
-      recordingTimer.current = setInterval(() => setElapsed((Date.now() - started) / 1000), 100);
-      // Overdubs capture one cycle; free first takes are capped to avoid accidental runaway capture.
-      stopTimer.current = setTimeout(stopRecording, layers.length ? getEngine().duration * 1000 : 120_000);
-    } catch (reason) { releaseMicrophone(); report(reason); setRecordingState(candidate ? 'review' : 'idle'); }
+      setMicrophoneLabel(stream.getAudioTracks()[0]?.label || 'Connected microphone');
+      setInputDevice(stream.getAudioTracks()[0]?.getSettings().deviceId || deviceId);
+      setRecordingState('ready');
+      void navigator.mediaDevices.enumerateDevices().then((items) => {
+        if (!disposed.current && run === runRef.current) setDevices(items.filter((item) => item.kind === 'audioinput'));
+      }).catch(() => {});
+    } catch (reason) {
+      stream?.getTracks().forEach((track) => track.stop());
+      if (disposed.current || run !== runRef.current) return;
+      releaseMicrophone(); setRecordingState(candidate ? 'review' : 'idle');
+      const name = reason instanceof DOMException ? reason.name : '';
+      setError(name === 'NotAllowedError' ? 'Microphone access was declined. Allow it in your browser site settings, then try again.' : name === 'NotFoundError' || name === 'OverconstrainedError' ? 'That microphone is unavailable. Choose another input and try again.' : reason instanceof Error ? reason.message : 'Could not open the microphone. Please try again.');
+    }
   }
 
-  function record() {
-    if (recordingState !== 'ready') return;
-    setCountdown(3); setRecordingState('countdown');
-    let remaining = 3;
-    countdownRef.current = setInterval(() => {
-      remaining -= 1; setCountdown(remaining);
-      if (!remaining) { clearInterval(countdownRef.current!); countdownRef.current = null; void beginTake(); }
-    }, 1000);
+  async function stopRecording() {
+    const recorder = recorderRef.current;
+    if (!recorder || stoppingRef.current) return;
+    stoppingRef.current = true;
+    const run = runRef.current;
+    const sampleRate = recorder.sampleRate;
+    if (recordingTimer.current) clearInterval(recordingTimer.current);
+    stopMetronome(); getEngine().reset(); setPlaying(false); setRecordingState('processing');
+    try {
+      const samples = await recorder.stop();
+      if (disposed.current || run !== runRef.current) return;
+      if (samples.length < sampleRate * .25) throw new Error('That take was too short. Record at least a moment before stopping.');
+      const id = `take-${crypto.randomUUID()}`;
+      const duration = getEngine().addSamples(id, samples, sampleRate);
+      decodedRecordings.current.add(id);
+      const take: Layer = { id, name: partName.trim() || `Layer ${layers.length + 1}`, kind: 'recording', enabled: true, volume: .85, recorded: true, blob: encodeWav(samples, sampleRate), duration, peaks: getEngine().peaks(id) };
+      getEngine().configureSession(layers);
+      if (candidate?.recorded) getEngine().removeRecording(candidate.id);
+      setCandidate(take); setPreviewCandidate(false); setSoloId(null); setRecordingState('review');
+    } catch (reason) {
+      if (!disposed.current && run === runRef.current) { report(reason); setRecordingState(candidate ? 'review' : 'idle'); }
+    } finally {
+      stoppingRef.current = false;
+      if (!disposed.current && run === runRef.current) releaseMicrophone();
+    }
+  }
+
+  async function record() {
+    if (recordingState !== 'ready' || !recorderRef.current || busy) return;
+    const run = runRef.current;
+    const recorder = recorderRef.current;
+    stopMetronome(); setError(''); setRecordingState('countdown'); setCountdown(countIn ? 4 : 0);
+    setLivePeaks([]); setElapsed(0); setSoloId(null);
+    try {
+      const engine = getEngine();
+      const context = await engine.ready();
+      await prepareAudio();
+      if (disposed.current || run !== runRef.current || recorder !== recorderRef.current) return;
+      engine.configureSession(layers);
+      const beatSeconds = 60 / tempo;
+      const countAt = context.currentTime + .12;
+      const startAt = countAt + (countIn ? 4 * beatSeconds : 0);
+      recorder.start(startAt);
+      engine.volume(volume);
+      engine.playAt(layers, startAt);
+      metronomeRef.current = new Metronome(context);
+      metronomeRef.current.start(countAt, tempo, canSoundClick(metronomeMode, headphones));
+      const update = () => {
+        const seconds = context.currentTime - startAt;
+        if (seconds < 0) {
+          setCountdown(countIn ? Math.min(4, Math.ceil(-seconds / beatSeconds)) : 0);
+        } else {
+          setRecordingState('recording'); setCountdown(0); setElapsed(seconds);
+          setLivePeaks((current) => [...current.slice(-63), Math.min(1, levelRef.current * 3)]);
+        }
+        setBeat(metronomeMode !== 'off' || seconds < 0 ? Math.max(0, Math.floor((context.currentTime - countAt) / beatSeconds)) % 4 : -1);
+      };
+      update();
+      recordingTimer.current = setInterval(update, 80);
+    } catch (reason) {
+      if (run === runRef.current && !disposed.current) {
+        recorder.cancel(); stopMetronome(); getEngine().reset(); releaseMicrophone();
+        report(reason); setRecordingState(candidate ? 'review' : 'idle');
+      }
+    }
   }
 
   function cancelSetup() {
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    countdownRef.current = null; releaseMicrophone();
+    runRef.current++;
+    if (recordingTimer.current) clearInterval(recordingTimer.current);
+    stopMetronome(); releaseMicrophone(); getEngine().reset(); setPlaying(false);
     setCountdown(0); setRecordingState(candidate ? 'review' : 'idle');
+  }
+
+  async function previewMetronome() {
+    if (locked || busy) return;
+    if (metronomePreview) { stopMetronome(); return; }
+    setBusy(true);
+    const run = runRef.current;
+    try {
+      const context = await getEngine().ready();
+      if (run !== runRef.current || disposed.current) return;
+      const when = context.currentTime + .08;
+      metronomeRef.current = new Metronome(context);
+      metronomeRef.current.start(when, tempo, canSoundClick(metronomeMode, headphones));
+      setMetronomePreview(true);
+      previewTimer.current = setInterval(() => setBeat(Math.max(0, Math.floor((context.currentTime - when) / (60 / tempo))) % 4), 40);
+    } catch (reason) { report(reason); }
+    finally { setBusy(false); }
+  }
+
+  async function reviewTake(alone: boolean) {
+    if (!candidate || locked || busy) return;
+    setError(''); setBusy(true); stopMetronome();
+    try {
+      await prepareAudio();
+      const review = [...layers, candidate].map((layer) => ({ ...layer, enabled: alone ? layer.id === candidate.id : layer.id === candidate.id || layer.enabled }));
+      setSoloId(alone ? candidate.id : null); setPreviewCandidate(true);
+      getEngine().configureSession([...layers, candidate]);
+      await getEngine().play(review, true);
+      getEngine().volume(volume); setPlaying(true);
+    } catch (reason) { report(reason); }
+    finally { setBusy(false); }
+  }
+
+  function undoKeep() {
+    if (locked || busy || candidate || !layers.at(-1)?.recorded) return;
+    getEngine().reset(); setPlaying(false);
+    const take = layers.at(-1)!;
+    const remaining = layers.slice(0, -1);
+    setLayers(remaining); setCandidate(take); setPreviewCandidate(false); setPartName(take.name); setRecordingState('review');
+    getEngine().configureSession(remaining);
   }
 
   function download(layer: Layer) {
     if (!layer.blob) return;
     const url = URL.createObjectURL(layer.blob);
     const anchor = document.createElement('a'); anchor.href = url;
-    anchor.download = `${layer.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${layer.blob.type.includes('mp4') ? 'm4a' : 'webm'}`;
+    anchor.download = `${layer.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${layer.blob.type.includes('wav') ? 'wav' : layer.blob.type.includes('mp4') ? 'm4a' : 'webm'}`;
     anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   return {
+    title, setTitle, localReady, loadError, saveState, saveError, retrySave: () => persistSong(), openMySongs,
     layers, candidate, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
     togglePlayback, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
-    enableMicrophone, record, stopRecording, cancelSetup, download,
+    enableMicrophone, record, stopRecording, cancelSetup, download, reviewTake, undoKeep,
+    partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beat, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,
+    setTempo: (value: number) => { stopMetronome(); setTempo(Math.max(40, Math.min(240, Number.isFinite(value) ? value : 84))); },
+    setMetronomeMode: (mode: MetronomeMode) => { stopMetronome(); setMetronomeMode(mode); },
+    setHeadphones: (value: boolean) => { stopMetronome(); setHeadphones(value); if (!value && metronomeMode === 'sound') setMetronomeMode('visual'); },
+    changeInput: (id: string) => { setInputDevice(id); void enableMicrophone(id); },
     setPreviewCandidate, setError,
     setSoloId: (id: string | null) => { if (!locked) setSoloId(id); },
     setLayerVolume: (id: string, value: number) => setLayers((current) => current.map((layer) => layer.id === id ? { ...layer, volume: value } : layer)),

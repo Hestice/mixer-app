@@ -37,11 +37,11 @@ The tonearm and stylus use one pivot; the playing stylus lands within the groove
 
 Each scene entry restores its demo preset: guitar in scenes 1–2, guitar/keys/rhythm in scene 3, and all four parts in scenes 4–5. Layer switches can be tried within a scene; re-entering it restores the preset. Scrolling never starts paused audio, so press Play once to hear the tour. This scene control stops in the recording workspace, where the mix and recorded takes stay under your control. Hardware callouts are available through Show part names in the opening scene.
 
-In the recording session, Mix controls exposes volume and solo controls. Each kept recording has a download action. A first recording sets the loop length, up to two minutes; later recordings last one loop.
+The recording console has a shared waveform timeline, per-layer volume and solo controls, and WAV downloads. All takes record freely until Stop; shorter parts play once and remain silent after their end.
 
 ## Project layout
 
-- `apps/web`: Next.js App Router, React, Web Audio and MediaRecorder.
+- `apps/web`: Next.js App Router, React, Web Audio and microphone capture through an AudioWorklet.
 - `apps/api`: NestJS health endpoint and demo metadata.
 - `scripts/generate-demo.py`: reproducible synthesis of the four original demo parts and waveform data.
 - `PRODUCT_RESEARCH.md` and `LANDING_EXPERIENCE.md`: product research and the earlier storyboard.
@@ -50,9 +50,13 @@ The interface works without the API. Audio stays in the browser, and the API has
 
 ## Current limits
 
-Recordings exist only in the open tab. Download each take before closing or refreshing; there is no project storage or combined audio export yet.
+Songs autosave locally in IndexedDB, including WAV recordings, the take under review, title, layer order, mute/volume, tempo and count-in. `/songs` lists saved sessions; `/studio?song=<id>` reopens one without playing audio or requesting microphone access. Audible clicks require headphone confirmation again.
 
-Browser and device latency can affect overdub timing. Headphones prevent the accompaniment from bleeding into the microphone. Real microphone recording still needs a device smoke test; automated checks cover audio scheduling, loop position and layer commitment.
+A stopped take saves before Keep; Keep only adds it to the composition. Wait for “Saved on this device” before closing. An active recording is still in memory until Stop, and closing mid-recording can lose that take. Browser storage is specific to the browser profile and site origin, can run out or be cleared, and is not cloud backup. Downloads remain available. There is no combined audio export yet.
+
+Saves serialize per session and commit audio, review state and the library summary together. Revision checks reject stale-tab overwrites. Storage failures leave the previous save intact, show a retry/download message and warn before leaving. A failed or missing-session load never autosaves an empty replacement.
+
+Browser and device latency can affect overdub timing. Headphones reduce acoustic bleed; the app cannot guarantee isolation from speakers or leaking headphones. Browser QA used a synthetic microphone to verify record/review/keep, a longer second take, canceled retry recovery, and silence in the captured take while clicks and backing audio played. Real microphone recording still needs a device smoke test.
 
 The demo instruments are synthesized, including the harmony. They are not extracted stems or generated singing. Source separation, vocal harmonization, lessons and collaboration remain future product work.
 
@@ -63,3 +67,14 @@ This repository can stay separate from the portfolio. A future subdomain can poi
 ## Design review
 
 The disc controls, labels and interface copy were reviewed using [deslop](https://github.com/jarrheyd/skills/blob/main/skills/writing/deslop/SKILL.md). The review removed repeated actions, ornamental captions and background effects while preserving the scroll story and turntable controls.
+
+## Recording console
+
+Open `/studio` for an empty session, or enter from either recording action at the end of the tour. The console keeps a compact playable turntable, a shared waveform timeline, and a dedicated recording panel.
+
+- Connect a microphone, check its input meter, name the part, and optionally use a four-beat count-in.
+- Every take records freely until Stop. Existing parts play once from the start; they do not loop or limit the new take. Each waveform retains its own length.
+- Review the take alone or with the song, keep it as a layer, or try another take. The previous take remains available until its replacement succeeds. Undo last keep moves the layer back into review.
+- A visual metronome is enabled by default. Sound requires an explicit headphone confirmation. Clicks route only to the listening output; the AudioWorklet captures only the microphone and outputs silence. Speaker or headphone leakage can still enter a physical microphone, so use wired headphones at a low volume. The app cannot detect the output device or guarantee acoustic isolation.
+- Microphone capture and backing-track starts share the AudioContext clock. Hardware input/output latency still depends on the device; hardware latency calibration is not yet implemented.
+- Recordings download as individual PCM WAV files. Sessions autosave locally and reopen from My songs. A full-song export is not yet implemented.

@@ -1,6 +1,6 @@
 import { extractPeaks, type Layer } from './session';
 
-/** All parts use one AudioContext and one loop boundary, so toggling never drifts. */
+/** The tour loops; the recording workspace plays each part once on a shared clock. */
 export class AudioEngine {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -10,11 +10,12 @@ export class AudioEngine {
   private startedAt = 0;
   private pausedAt = 0;
   private loopDuration = 80 / 7;
+  private looping = true;
   playing = false;
 
   async ready() {
     if (!this.context) {
-      this.context = new AudioContext();
+      this.context = new AudioContext({ latencyHint: 'interactive' });
       this.master = this.context.createGain();
       this.master.gain.value = 0.65;
       // A gentle limiter keeps layered auditioning from clipping the destination.
@@ -48,6 +49,22 @@ export class AudioEngine {
     return buffer.duration;
   }
 
+  addSamples(id: string, samples: Float32Array, sampleRate: number) {
+    if (!this.context) throw new Error('Connect your microphone first.');
+    const buffer = this.context.createBuffer(1, samples.length, sampleRate);
+    buffer.copyToChannel(new Float32Array(samples), 0);
+    this.buffers.set(id, buffer);
+    return buffer.duration;
+  }
+
+  configureSession(layers: Layer[]) {
+    this.reset();
+    this.looping = false;
+    this.loopDuration = Math.max(0, ...layers.map((layer) => layer.duration ?? this.buffers.get(layer.id)?.duration ?? (layer.recorded ? 0 : 80 / 7)));
+  }
+
+  removeRecording(id: string) { this.buffers.delete(id); }
+
   setLoopDuration(duration: number) {
     if (Number.isFinite(duration) && duration > 0) this.loopDuration = duration;
   }
@@ -59,41 +76,63 @@ export class AudioEngine {
   }
   get position() {
     if (!this.context || !this.playing) return this.pausedAt;
-    return Math.max(0, this.context.currentTime - this.startedAt) % this.loopDuration;
+    const elapsed = Math.max(0, this.context.currentTime - this.startedAt);
+    return this.looping ? elapsed % this.loopDuration : Math.min(elapsed, this.loopDuration);
   }
 
   async play(layers: Layer[], restart = false) {
     const context = await this.ready();
     if (restart) this.pausedAt = 0;
-    if (this.playing) this.stopSources();
-    const offset = this.pausedAt % this.loopDuration;
+    this.stopSources();
+    const offset = this.looping ? this.pausedAt % this.loopDuration : this.pausedAt >= this.loopDuration ? 0 : this.pausedAt;
     const when = context.currentTime + 0.04;
+    this.start(layers, when, offset);
+  }
+
+  /** Schedule backing tracks at the exact same audio time as microphone capture. */
+  playAt(layers: Layer[], when: number) {
+    if (!this.context) throw new Error('Audio is not ready.');
+    this.stopSources();
+    this.start(layers, when, 0);
+  }
+
+  private start(layers: Layer[], when: number, offset: number) {
     this.startedAt = when - offset;
-    this.playing = true;
+    this.pausedAt = offset;
+    this.playing = layers.length > 0;
     for (const layer of layers) this.attach(layer, when, offset);
   }
 
   private attach(layer: Layer, when: number, offset: number) {
     const buffer = this.buffers.get(layer.id);
     if (!buffer || !this.context || !this.master) return;
+    if (!this.looping && offset >= buffer.duration) return;
     const source = this.context.createBufferSource();
     const gain = this.context.createGain();
     // Pad shorter takes so they repeat on the composition boundary, not their own length.
     const frames = Math.max(1, Math.round(this.loopDuration * buffer.sampleRate));
-    if (buffer.length !== frames) {
+    if (this.looping && buffer.length !== frames) {
       const aligned = this.context.createBuffer(buffer.numberOfChannels, frames, buffer.sampleRate);
       for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
         aligned.copyToChannel(buffer.getChannelData(channel).subarray(0, frames), channel);
       }
       source.buffer = aligned;
     } else source.buffer = buffer;
-    source.loop = true;
+    source.loop = this.looping;
     source.loopEnd = this.loopDuration;
     gain.gain.value = layer.enabled ? layer.volume : 0;
     source.connect(gain);
     gain.connect(this.master);
     source.start(when, offset);
     this.sources.set(layer.id, { source, gain });
+    if (!this.looping) source.onended = () => {
+      // A stopped or replaced source must not end a later playback session.
+      if (this.sources.get(layer.id)?.source !== source || !this.context) return;
+      if (this.context.currentTime >= this.startedAt + this.loopDuration - .01) {
+        this.pausedAt = this.loopDuration;
+        this.playing = false;
+      }
+    };
   }
 
   sync(layers: Layer[]) {

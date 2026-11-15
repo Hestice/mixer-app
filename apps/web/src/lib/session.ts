@@ -11,6 +11,7 @@ export interface Layer {
   recorded?: boolean;
   blob?: Blob;
   peaks?: number[];
+  duration?: number;
 }
 
 export const demoLayers: Layer[] = [

@@ -14,6 +14,7 @@ class FakeBuffer {
 }
 class FakeSource extends FakeNode {
   buffer: FakeBuffer | null = null; loop = false; loopEnd = 0; stopped = false;
+  onended: (() => void) | null = null;
   started: number[] = [];
   start(when: number, offset: number) { this.started = [when, offset]; }
   stop() { this.stopped = true; }
@@ -26,7 +27,7 @@ class FakeContext {
   createGain() { const gain = new FakeGain(); this.gains.push(gain); return gain; }
   createDynamicsCompressor() { return Object.assign(new FakeNode(), { threshold: new FakeParam(), ratio: new FakeParam() }); }
   createBufferSource() { const source = new FakeSource(); this.sources.push(source); return source; }
-  createBuffer(_channels: number, length: number) { const buffer = new FakeBuffer(); buffer.length = length; return buffer; }
+  createBuffer(_channels: number, length: number, sampleRate: number) { const buffer = new FakeBuffer(); buffer.length = length; buffer.sampleRate = sampleRate; buffer.duration = length / sampleRate; return buffer; }
   async decodeAudioData() { return new FakeBuffer(); }
   async resume() {} async close() { this.state = 'closed'; }
 }
@@ -35,6 +36,61 @@ const originalContext = globalThis.AudioContext;
 beforeEach(() => {
   globalThis.AudioContext = FakeContext as unknown as typeof AudioContext;
   globalThis.fetch = async () => new Response(new Uint8Array([0]));
+});
+
+test('free recordings retain their full lengths and never repeat or truncate shorter parts', async () => {
+  const engine = new AudioEngine();
+  await engine.ready();
+  engine.addSamples('short', new Float32Array(200), 100);
+  engine.addSamples('long', new Float32Array(700), 100);
+  const layers = [
+    { id: 'short', name: 'Guitar', kind: 'recording' as const, enabled: true, volume: 1, duration: 2 },
+    { id: 'long', name: 'Vocals', kind: 'recording' as const, enabled: true, volume: 1, duration: 7 },
+  ];
+  engine.configureSession(layers);
+  await engine.play(layers);
+  const context = FakeContext.current;
+  assert.equal(engine.duration, 7);
+  assert.deepEqual(context.sources.map((source) => source.buffer?.length), [200, 700]);
+  assert.ok(context.sources.every((source) => !source.loop));
+  context.currentTime = 5.04;
+  assert.equal(engine.position, 5);
+  engine.pause();
+  await engine.play(layers);
+  assert.equal(context.sources.length, 3, 'resuming after the short part ends must not restart it');
+  assert.equal(context.sources[2].started[1], 5);
+  engine.dispose();
+});
+
+test('overdubbing schedules all backing layers at the microphone capture time', async () => {
+  const engine = new AudioEngine();
+  await engine.loadDemo();
+  engine.configureSession(demoLayers);
+  engine.playAt(demoLayers, 3.12);
+  assert.deepEqual(FakeContext.current.sources.map((source) => source.started), [[3.12, 0], [3.12, 0], [3.12, 0]]);
+  assert.ok(FakeContext.current.sources.every((source) => !source.loop));
+  engine.dispose();
+});
+
+test('free playback stops at the song end and replay cleans up ended sources', async () => {
+  const engine = new AudioEngine();
+  await engine.ready();
+  engine.addSamples('take', new Float32Array(300), 100);
+  const layers = [{ id: 'take', name: 'Take', kind: 'recording' as const, enabled: true, volume: 1, duration: 3 }];
+  engine.configureSession(layers);
+  await engine.play(layers);
+  const context = FakeContext.current;
+  const first = context.sources[0];
+  context.currentTime = 3.04;
+  first.onended?.();
+  assert.equal(engine.playing, false);
+  assert.equal(engine.position, 3);
+  await engine.play(layers);
+  assert.equal(first.stopped, true);
+  assert.equal(context.sources[1].started[1], 0);
+  first.onended?.();
+  assert.equal(engine.playing, true, 'a stale completion cannot stop the new playback');
+  engine.dispose();
 });
 afterEach(() => { globalThis.fetch = originalFetch; globalThis.AudioContext = originalContext; });
 

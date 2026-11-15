@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowRight, Mic, Volume2, X } from './icons';
+import { ArrowDown, ArrowRight, Mic, X } from './icons';
 import { useStudio } from '../hooks/use-studio';
 import { chapterFromProgress, harmonyLayer, mixChapterFromProgress } from '../lib/session';
 import { STORY_STOPS, CHAPTER_STOPS, layerReveal, tourBuildStage } from '../lib/story-motion';
 import { Deck } from './deck';
 import { LayerStrip } from './layer-strip';
-import { RecordingPanel } from './recording-panel';
+import { RecordingConsole } from './recording-console';
 import { useStoryMotion } from '../hooks/use-story-motion';
 import { useStoryScroll } from '../hooks/use-story-scroll';
 import { LayerFlight, type Flight } from './layer-flight';
@@ -19,16 +19,6 @@ const chapters = [
   { label: 'Try a layer', title: 'Try a part before you keep it.', description: 'Harmony joins on the right: a higher melody that fits the chords. Keep it or scroll to move it into your song, then add a part of your own.', next: 'Bring harmony into the song' },
   { label: 'Your turn', title: 'Now bring your own sound.', description: 'All four layers are in the song. Sing or play a part over them, or start with an empty song.', next: '' },
 ];
-
-const recordingCopy = {
-  idle: ['Your next layer starts here.', 'Use the microphone button to connect your input.'],
-  requesting: ['Connect your microphone.', 'Allow microphone access in your browser to continue.'],
-  ready: ['Ready when you are.', 'Use headphones. Press Record for a three-second count-in.'],
-  countdown: ['Get ready.', 'Recording starts after the count-in.'],
-  recording: ['Your part is recording.', 'Press Stop when you are finished.'],
-  processing: ['Preparing your take.', ''],
-  review: ['Hear what you just made.', 'Play your take on the right. Keep it to add it to the song on the left.'],
-};
 
 export function ListeningRoom() {
   const studio = useStudio();
@@ -45,7 +35,6 @@ export function ListeningRoom() {
   const harmonyTransfer = layerReveal('harmony', progress);
   const transferringHarmony = !studio.workspace && !harmonyKeptManually && harmonyTransfer > 0 && harmonyTransfer < 1;
   const [showParts, setShowParts] = useState(false);
-  const [mixOpen, setMixOpen] = useState(false);
   const [credits, setCredits] = useState(false);
   const creditsRef = useRef<HTMLDialogElement>(null);
   const harmonyKept = studio.layers.some((layer) => layer.id === 'harmony');
@@ -54,7 +43,6 @@ export function ListeningRoom() {
   const copy = chapters[chapter];
   const nextStop = STORY_STOPS.find((stop) => stop > progress + .001) ?? 1;
   const nextLabel = chapter === 2 && nextStop <= .50 ? nextStop === .40 ? 'Hear the keys' : 'Bring in rhythm' : copy.next;
-  const recording = recordingCopy[studio.recordingState];
   const applyTourScene = studio.applyTourScene;
 
   useLayoutEffect(() => {
@@ -98,11 +86,14 @@ export function ListeningRoom() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
+  if (studio.workspace) return <RecordingConsole studio={studio} />;
+
   return <>
     <a className="skip-link" href="#instrument">Skip to music controls</a>
     <header className="site-header">
       <a className="wordmark" href="/" aria-label="Listening room home"><span className="brand-icon" aria-hidden="true"><i /><i /><i /><i /></span>listening room.</a>
       {!studio.workspace ? <nav className="tour-steps" aria-label="Story chapters">{chapters.map((item, index) => <button key={item.label} aria-label={`${index + 1}. ${item.label}`} aria-current={chapter === index ? 'step' : undefined} className={chapter === index ? 'current' : index < chapter ? 'visited' : ''} onClick={() => goToStop(CHAPTER_STOPS[index])}><span>{index + 1}</span><span>{item.label}</span></button>)}</nav> : <span className="session-label">Your recording session</span>}
+      <a className="text-button landing-library-link" href="/songs">My songs</a>
     </header>
 
     <main className={`story ${studio.workspace ? 'workspace' : ''}`} ref={storyRef}>
@@ -110,8 +101,8 @@ export function ListeningRoom() {
       <div ref={sceneRef} className={`scene ${studio.workspace ? '' : 'motion-tour'} ${flight ? 'flight-active' : ''} chapter-${chapter} ${showRight ? 'two-decks' : 'one-deck'} ${studio.workspace ? 'workspace-scene' : ''}`}>
         <div className="scene-copy">
           <div className="mobile-step">{studio.workspace ? 'Your session' : `${chapter + 1} of 5 / ${copy.label}`}</div>
-          <h1>{studio.workspace ? recording[0] : copy.title}</h1>
-          <p>{studio.workspace ? recording[1] : chapter === 0 && studio.playing ? 'The tonearm carries the stylus, the tiny needle that follows the groove.' : copy.description}</p>
+          <h1>{copy.title}</h1>
+          <p>{chapter === 0 && studio.playing ? 'The tonearm carries the stylus, the tiny needle that follows the groove.' : copy.description}</p>
         </div>
 
         <section className="instrument" id="instrument" aria-label="Music console">
@@ -119,7 +110,7 @@ export function ListeningRoom() {
             {!studio.workspace && <div className="console-shell" aria-hidden="true" />}
             <div className="song-side">
               <Deck side="left" studio={studio} chapter={chapter} showParts={showParts} />
-              <div className="song-layers"><h2>Layers in your song</h2><LayerStrip studio={studio} chapter={chapter} advanced={mixOpen} arrivingId={flight?.layer.id} pendingLayer={!studio.workspace && !harmonyKept ? harmonyLayer : undefined} /></div>
+              <div className="song-layers"><h2>Layers in your song</h2><LayerStrip studio={studio} chapter={chapter} advanced={false} arrivingId={flight?.layer.id} pendingLayer={!studio.workspace && !harmonyKept ? harmonyLayer : undefined} /></div>
             </div>
             <>
               <div className="deck-separator" aria-hidden="true"><span>+</span></div>
@@ -129,7 +120,6 @@ export function ListeningRoom() {
                   {transferringHarmony ? <p role="status">Harmony is moving into your song.</p> : harmonyKept ? <p className="transfer-confirmation" role="status">Added to your song <span>Look for Harmony on the left.</span></p> : <><div className="layer-identity"><span className="layer-color harmony-color" /><span>Harmony<small>High melody / new layer</small></span></div>{studio.candidate ? <div className="candidate-decision"><button className="button button-dark" onClick={keepLayer} disabled={studio.busy || !!flight}>Keep in my song <ArrowRight size={16} /></button><button className="text-button" onClick={studio.discardDemoPreview}>Remove this layer</button></div> : <p>Listen on the record above.</p>}</>}
                 </div>}
                 {!studio.workspace && chapter === 4 && <div className="record-entry"><button className="button button-record" disabled={studio.busy} onClick={() => enter(true)}><Mic size={18} />Record over this song <ArrowRight size={16} /></button><button className="text-button" disabled={studio.busy} onClick={() => enter(false)}>Start with an empty song</button></div>}
-                {studio.workspace && <RecordingPanel studio={studio} onKeep={keepLayer} />}
               </div>
             </>
           </div>
@@ -138,8 +128,6 @@ export function ListeningRoom() {
         {!studio.workspace && <div className="scene-note">
           {chapter === 0 && <button className="part-names-toggle" aria-pressed={showParts} onClick={() => setShowParts(!showParts)}>{showParts ? 'Hide part names' : 'Show part names'}</button>}
         </div>}
-        {studio.workspace && <div className="workspace-tools"><button className="text-button" aria-expanded={mixOpen} onClick={() => setMixOpen(!mixOpen)}>{mixOpen ? 'Hide mix controls' : 'Mix controls'}</button><span>Takes stay in this tab. Download before closing.</span></div>}
-        {studio.workspace && mixOpen && <label className="master-volume"><Volume2 size={17} />Song volume<input type="range" min="0" max="1" step=".01" value={studio.volume} onChange={(event) => studio.setVolume(Number(event.target.value))} /></label>}
         {!studio.workspace && <footer className="tour-footer">
           <div className="tour-progress" aria-hidden="true"><span style={{ transform: `scaleX(${progress})` }} /></div>
           <button className="credits-link" onClick={() => setCredits(true)}>After hours / Original demo</button>
