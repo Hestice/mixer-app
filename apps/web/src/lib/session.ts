@@ -1,4 +1,5 @@
 import demoPeaks from './demo-peaks.json';
+import { layerReveal, STORY_BOUNDARIES } from './story-motion';
 
 export type LayerKind = 'guitar' | 'keys' | 'rhythm' | 'harmony' | 'recording';
 export interface Layer {
@@ -22,6 +23,14 @@ export const harmonyLayer: Layer = {
   id: 'harmony', name: 'Harmony', kind: 'harmony', enabled: true, volume: 0.65, peaks: demoPeaks.harmony,
 };
 
+/** Tour entry is deterministic in either direction; the workspace owns its mix. */
+export function tourScene(chapter: number, buildStage: 0 | 1 | 2 = chapter >= 2 ? 2 : 0): { layers: Layer[]; candidate: Layer | null } {
+  const stage = chapter >= 3 ? 2 : chapter === 0 ? 0 : buildStage;
+  const layers = demoLayers.map((layer) => ({ ...layer, enabled: layer.id === 'guitar' || (layer.id === 'keys' ? stage >= 1 : stage >= 2) }));
+  if (chapter >= 4) layers.push({ ...harmonyLayer });
+  return { layers, candidate: chapter === 3 ? { ...harmonyLayer } : null };
+}
+
 /** A kept candidate becomes one independently editable layer, never a duplicate. */
 export function commitLayer(layers: Layer[], candidate: Layer): Layer[] {
   return layers.some((layer) => layer.id === candidate.id)
@@ -30,7 +39,12 @@ export function commitLayer(layers: Layer[], candidate: Layer): Layer[] {
 }
 
 export function chapterFromProgress(progress: number): number {
-  return Math.max(0, Math.min(4, Math.floor(Math.min(1, Math.max(0, progress)) * 5)));
+  return STORY_BOUNDARIES.filter((boundary) => progress >= boundary).length;
+}
+
+/** Harmony stays a preview while its card travels; commit on arrival. */
+export function mixChapterFromProgress(progress: number): number {
+  return layerReveal('harmony', progress) === 1 ? 4 : chapterFromProgress(progress);
 }
 
 export function timeLabel(seconds: number): string {

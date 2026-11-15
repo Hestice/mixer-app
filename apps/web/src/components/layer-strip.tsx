@@ -1,15 +1,16 @@
 import { Download } from './icons';
 import { Waveform } from './waveform';
+import type { Layer } from '../lib/session';
 import type { Studio } from '../hooks/use-studio';
 
-export function LayerStrip({ studio, chapter, advanced, arrivingId }: { studio: Studio; chapter: number; advanced: boolean; arrivingId?: string }) {
-  const visible = studio.layers;
+export function LayerStrip({ studio, chapter, advanced, arrivingId, pendingLayer }: { studio: Studio; chapter: number; advanced: boolean; arrivingId?: string; pendingLayer?: Layer }) {
+  const visible = pendingLayer ? [...studio.layers, pendingLayer] : studio.layers;
   return <div className="layer-strip" aria-label="Layers in your song">
     {!visible.length && <p className="empty-layers">Your first recording will appear here when you keep it.</p>}
     {visible.map((layer) => {
       const audible = studio.soloId ? studio.soloId === layer.id : layer.enabled;
-      return <div className={`layer ${audible ? 'enabled' : ''} layer-${layer.kind} ${arrivingId === layer.id ? 'layer-arriving' : ''}`} key={layer.id} data-layer-id={layer.id}>
-        <button className="layer-toggle" aria-label={`${layer.name} layer`} aria-pressed={layer.enabled} disabled={studio.locked || studio.busy} onClick={() => void studio.toggleLayer(layer.id)}>
+      return <div className={`layer ${audible ? 'enabled' : ''} layer-${layer.kind} ${arrivingId === layer.id ? 'layer-arriving' : ''} ${layer.id === pendingLayer?.id ? 'layer-pending' : ''}`} key={layer.id} data-layer-id={layer.id}>
+        <button className="layer-toggle" aria-label={`${layer.name} layer`} aria-pressed={layer.enabled} disabled={studio.locked || studio.busy || layer.id === pendingLayer?.id} onClick={() => void studio.toggleLayer(layer.id)}>
           <span className={`layer-color ${layer.kind}-color`} />
           <span className="layer-name">{layer.name}</span>
           <Waveform active={audible && studio.playing} compact peaks={layer.peaks} progress={studio.position / studio.duration} />

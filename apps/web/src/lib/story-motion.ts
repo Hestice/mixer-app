@@ -1,5 +1,7 @@
 /** Resting positions occur only after each scene has fully unfolded. */
-export const STORY_STOPS = [0, .27, .50, .70, 1] as const;
+export const STORY_BOUNDARIES = [.2, .30, .6, .94] as const;
+export const STORY_STOPS = [0, .27, .40, .50, .70, 1] as const;
+export const CHAPTER_STOPS = [0, .27, .40, .70, 1] as const;
 export const clamp = (value: number) => Math.min(1, Math.max(0, value));
 export const lerp = (from: number, to: number, progress: number) => from + (to - from) * progress;
 export function segment(progress: number, start: number, end: number) {
@@ -9,9 +11,17 @@ export function segment(progress: number, start: number, end: number) {
 
 export function layerReveal(id: string, progress: number) {
   if (id === 'guitar') return segment(progress, .08, .25);
-  if (id === 'keys') return segment(progress, .30, .44);
-  if (id === 'rhythm') return segment(progress, .36, .50);
+  if (id === 'keys') return segment(progress, .30, .39);
+  if (id === 'rhythm') return segment(progress, .41, .50);
+  if (id === 'harmony') return segment(progress, .72, .90);
   return segment(progress, .30, .50);
+}
+
+/** Sound joins when each card reaches its slot, using the same scroll timing. */
+export function tourBuildStage(progress: number): 0 | 1 | 2 {
+  if (layerReveal('rhythm', progress) >= .97) return 2;
+  if (layerReveal('keys', progress) >= .97) return 1;
+  return 0;
 }
 
 export function storyGeometry(progress: number, width: number, viewportHeight: number, layerCount: number, reducedMotion = false) {
@@ -59,4 +69,11 @@ export const TONEARM = { pivotX: 96, pivotY: 4, length: 62, restAngle: -12, play
 export function stylusPosition(angle: number) {
   const radians = angle * Math.PI / 180;
   return { x: TONEARM.pivotX - Math.sin(radians) * TONEARM.length, y: TONEARM.pivotY + Math.cos(radians) * TONEARM.length };
+}
+
+
+/** Reserve readable travel time for Harmony, including large wheel gestures. */
+export function harmonyTravelTime(from: number, to: number) {
+  const overlap = Math.max(0, Math.min(Math.max(from, to), .90) - Math.max(Math.min(from, to), .72));
+  return overlap / (.90 - .72) * 2.4;
 }

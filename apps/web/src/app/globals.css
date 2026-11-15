@@ -241,3 +241,7 @@ input[type=range] { accent-color: #687b59; }
  .motion-tour:not(.chapter-0) .disc-action { font-size: 10px; }
  .motion-tour:not(.chapter-0) .disc-symbol svg { width: 14px; height: 14px; }
 }
+
+/* The moving preview is not interactive, but remains as visible as a kept layer. */
+.motion-tour .layer-pending { background: #e1ecd7; outline: 1px solid #9cb18b; box-shadow: 0 8px 18px -10px #39482a80; }
+.motion-tour .layer-pending .layer-toggle:disabled { opacity: 1; }

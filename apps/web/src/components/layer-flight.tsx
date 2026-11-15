@@ -15,10 +15,10 @@ export function LayerFlight({ flight, finish }: { flight: Flight; finish: () => 
     const dx = flight.from.x - rect.left - rect.width / 2;
     const dy = flight.from.y - rect.top - rect.height / 2;
     const animation = ghost.animate([
-      { transform: `translate(${dx}px, ${dy}px) scale(.42) rotate(-10deg)`, opacity: .7 },
-      { transform: `translate(${dx * .5}px, ${dy * .4 - 45}px) scale(.92) rotate(-4deg)`, opacity: 1, offset: .5 },
+      { transform: `translate(${dx}px, ${dy}px) scale(.84)`, opacity: .7 },
+      { transform: `translate(${dx * .75}px, ${dy * .125}px) scale(.94)`, opacity: 1, offset: .5 },
       { transform: 'translate(0,0) scale(1) rotate(0deg)', opacity: 1 },
-    ], { duration: 950, easing: 'cubic-bezier(.22,.61,.36,1)', fill: 'both' });
+    ], { duration: 2200, easing: 'ease-in-out', fill: 'both' });
     animation.onfinish = finish;
     const media = matchMedia('(prefers-reduced-motion: reduce)');
     media.addEventListener('change', finish, { once: true });

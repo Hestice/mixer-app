@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AudioEngine } from '../lib/audio-engine';
-import { commitLayer, demoLayers, harmonyLayer, type Layer } from '../lib/session';
+import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
 
 export type RecordingState = 'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'processing' | 'review';
 
 export function useStudio() {
   const engineRef = useRef<AudioEngine | null>(null);
   const getEngine = () => engineRef.current ?? (engineRef.current = new AudioEngine());
+  const tourChapterRef = useRef(0);
   const [layers, setLayers] = useState<Layer[]>(demoLayers);
   const [candidate, setCandidate] = useState<Layer | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -39,7 +40,7 @@ export function useStudio() {
   const mixRef = useRef(mix);
   mixRef.current = mix;
 
-  useEffect(() => { engineRef.current?.sync(mix); }, [layers, candidate, previewCandidate, soloId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { engineRef.current?.sync(mix); }, [layers, candidate, previewCandidate, soloId, playing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     disposed.current = false;
@@ -64,6 +65,16 @@ export function useStudio() {
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [hasRecordings, recordingState]);
+
+  const applyTourScene = useCallback((chapter: number, buildStage: 0 | 1 | 2) => {
+    if (workspace) return;
+    tourChapterRef.current = chapter;
+    const scene = tourScene(chapter, buildStage);
+    setLayers(scene.layers);
+    setCandidate(scene.candidate);
+    setPreviewCandidate(true);
+    setSoloId(null);
+  }, [workspace]);
 
   const report = (reason: unknown) => setError(reason instanceof Error ? reason.message : 'Something went wrong. Please try again.');
 
@@ -91,7 +102,7 @@ export function useStudio() {
       setBusy(true); setError('');
       try {
         if (!workspace || withDemo) await getEngine().loadDemo();
-        await getEngine().play([...next, ...(candidate ? [{ ...candidate, enabled: previewCandidate }] : [])]);
+        await getEngine().play(mixRef.current);
         getEngine().volume(volume); setPlaying(true);
       } catch (reason) { report(reason); }
       finally { setBusy(false); }
@@ -99,13 +110,15 @@ export function useStudio() {
   }
 
   async function previewHarmony() {
-    if (busy || locked) return;
+    if (workspace || tourChapterRef.current !== 3 || busy || locked) return;
+    setCandidate({ ...harmonyLayer });
+    setPreviewCandidate(true); setSoloId(null);
+    // Joining an already playing mix must not restart its loop.
+    if (playing) return;
     setBusy(true); setError('');
     try {
       await getEngine().loadDemo();
-      if (!layers.some((layer) => layer.id === harmonyLayer.id)) setCandidate(harmonyLayer);
-      setPreviewCandidate(true); setSoloId(null);
-      await getEngine().play(layers.some((layer) => layer.id === harmonyLayer.id) ? layers : [...layers, harmonyLayer]);
+      await getEngine().play(mixRef.current);
       getEngine().volume(volume); setPlaying(true);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
@@ -120,7 +133,7 @@ export function useStudio() {
     try {
       if (!workspace || withDemo) await getEngine().loadDemo();
       setPreviewCandidate(true);
-      await getEngine().play([...layers, { ...candidate, enabled: true }]);
+      await getEngine().play(mixRef.current);
       getEngine().volume(volume); setPlaying(true);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
@@ -261,7 +274,7 @@ export function useStudio() {
     layers, candidate, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
-    togglePlayback, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace,
+    togglePlayback, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     enableMicrophone, record, stopRecording, cancelSetup, download,
     setPreviewCandidate, setError,
     setSoloId: (id: string | null) => { if (!locked) setSoloId(id); },

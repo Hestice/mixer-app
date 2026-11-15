@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AudioEngine } from './audio-engine';
-import { demoLayers, extractPeaks, harmonyLayer } from './session';
+import { tourBuildStage } from './story-motion';
+import { demoLayers, extractPeaks, harmonyLayer, tourScene } from './session';
 
 class FakeParam { value = 0; setTargetAtTime(value: number) { this.value = value; } }
 class FakeNode { connect() {} disconnect() {} }
@@ -82,5 +83,45 @@ test('muting a candidate changes its gain without restarting the composition', a
   engine.sync([...demoLayers, harmonyLayer]);
   assert.equal(context.gains[4].gain.value, harmonyLayer.volume);
   assert.equal(context.sources.length, 4);
+  engine.dispose();
+});
+
+test('scene changes update sounding layers in both directions without restarting or duplicating audio', async () => {
+  const sceneMix = (chapter: number) => {
+    const scene = tourScene(chapter);
+    return [...scene.layers, ...(scene.candidate ? [scene.candidate] : [])];
+  };
+  const engine = new AudioEngine();
+  await engine.loadDemo(); await engine.play(sceneMix(0));
+  const context = FakeContext.current;
+  const guitar = context.sources[0];
+  context.currentTime = 4.04;
+  for (const chapter of [1, 2, 3, 4, 3, 2, 1, 0, 4, 0]) {
+    engine.sync(sceneMix(chapter));
+    const audible = context.sources.filter((source, index) => !source.stopped && context.gains[index + 1].gain.value > 0);
+    assert.equal(audible.length, chapter < 2 ? 1 : chapter === 2 ? 3 : 4);
+    assert.equal(guitar.stopped, false);
+    assert.equal(engine.position, 4);
+  }
+  engine.pause();
+  engine.sync(sceneMix(4));
+  assert.equal(engine.playing, false, 'scrolling must not resume audio after an explicit pause');
+  assert.ok(context.sources.every((source) => source.stopped));
+  engine.dispose();
+});
+
+
+test('the build adds keys then rhythm, and removes them in reverse without restarting', async () => {
+  const engine = new AudioEngine();
+  await engine.loadDemo(); await engine.play(tourScene(1).layers);
+  const context = FakeContext.current;
+  context.currentTime = 3.04;
+  for (const [progress, sounding] of [[.27, [true, false, false]], [.40, [true, true, false]], [.50, [true, true, true]], [.40, [true, true, false]], [.27, [true, false, false]]] as const) {
+    engine.sync(tourScene(2, tourBuildStage(progress)).layers);
+    assert.deepEqual(context.gains.slice(1).map((gain) => gain.gain.value > 0), sounding);
+    assert.equal(engine.position, 3);
+    assert.equal(context.sources.length, 3);
+    assert.ok(context.sources.every((source) => !source.stopped));
+  }
   engine.dispose();
 });
