@@ -1,0 +1,22 @@
+{
+  "name": "audio-app",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.16.1",
+  "engines": { "node": ">=22.12 <25" },
+  "scripts": {
+    "dev": "nx run-many -t dev --projects=web,api --parallel=2 --outputStyle=stream",
+    "dev:web": "nx dev web",
+    "dev:api": "nx dev api",
+    "build": "nx run-many -t build",
+    "typecheck": "nx run-many -t typecheck",
+    "test": "nx run-many -t test",
+    "graph": "nx graph"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "nx": "24.0.6",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

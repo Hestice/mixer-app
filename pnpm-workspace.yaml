@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+allowBuilds:
+  nx: true
+  esbuild: true
+  sharp: true
+  '@nestjs/core': true
+minimumReleaseAgeExclude:
+  - lucide-react@1.73.0
