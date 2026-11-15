@@ -83,6 +83,11 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
           {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={state !== 'idle' || studio.busy} onClick={firstLayer}><Mic size={17} />Record your first layer</button></div>}
           {!!studio.layers.length && <button className="studio-add" disabled={studio.locked || studio.busy || !!studio.candidate} onClick={() => { recordButton.current?.focus(); recordButton.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); if (state === 'idle') void studio.enableMicrophone(); }}><Plus size={16} />Add another layer</button>}
           <div className="studio-song-bottom"><label>Song volume<input type="range" min="0" max="1" step=".01" value={studio.volume} aria-label="Song volume" onChange={(event) => studio.setVolume(Number(event.target.value))} /></label><span>Drag a part to choose when it enters. Open Trim & timing to shape it.</span></div>
+          {!!studio.layers.length && <div className="studio-export">
+            <button className="button button-light" disabled={studio.locked || studio.busy} onClick={() => void studio.downloadSong()} aria-describedby="song-export-help"><Download size={16} />{studio.exportBusy ? 'Preparing song…' : 'Download song'}</button>
+            <p id="song-export-help">One WAV with your kept takes, trims, timing and volumes. Muted layers stay silent.{studio.soloId ? ' “Hear alone” is only for listening; this downloads the song mix.' : ''}{studio.candidate ? ' The take under review is not included until you keep it.' : ''}</p>
+            <p className="studio-export-status" role="status">{studio.exportStatus}</p>
+          </div>}
           {notice && <p className="studio-notice" role="status"><Check size={15} />{notice}</p>}
         </section>
 

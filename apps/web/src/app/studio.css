@@ -167,3 +167,9 @@
 .studio-take .clip-editor { margin:16px 0; }.studio-take .take-picker { display:flex; font-size:11px; }.studio-track.is-muted .clip-body { opacity:.5; }
 .clip-editor button:focus-visible,.clip-details summary:focus-visible,.take-picker select:focus-visible,.clip-numbers input:focus-visible { outline:3px solid #9b7746; outline-offset:3px; }
 @media(pointer:coarse) { .trim-handle { width:28px; }.clip-lane,.trim-lane { height:76px; } }
+
+.studio-export { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.studio-export .button { padding: 10px 15px; }
+.studio-export p { max-width: 440px; margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.studio-export .studio-export-status { color: #536e43; }
+.studio-export-status:empty { display: none; }

@@ -1,3 +1,4 @@
+import { createSongOutput } from './audio-output';
 import { clipBounds, playbackWindow } from './clip-edits';
 import { extractPeaks, type Layer } from './session';
 
@@ -17,14 +18,7 @@ export class AudioEngine {
   async ready() {
     if (!this.context) {
       this.context = new AudioContext({ latencyHint: 'interactive' });
-      this.master = this.context.createGain();
-      this.master.gain.value = 0.65;
-      // A gentle limiter keeps layered auditioning from clipping the destination.
-      const limiter = this.context.createDynamicsCompressor();
-      limiter.threshold.value = -8;
-      limiter.ratio.value = 8;
-      this.master.connect(limiter);
-      limiter.connect(this.context.destination);
+      this.master = createSongOutput(this.context, .65);
     }
     if (this.context.state === 'suspended') await this.context.resume();
     return this.context;

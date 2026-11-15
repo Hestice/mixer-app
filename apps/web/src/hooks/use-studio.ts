@@ -8,6 +8,7 @@ import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '..
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
 import { Metronome, canSoundClick, type MetronomeMode } from '../lib/metronome';
 import { encodeWav } from '../lib/wav';
+import { exportSong, songFilename } from '../lib/song-export';
 import { useCloud } from '../components/cloud-provider';
 import { getBackupPreference } from '../lib/backup-store';
 import { getSong, SongWriter, storageMessage, type SongContent } from '../lib/song-store';
@@ -32,6 +33,9 @@ export function useStudio(startInWorkspace = false) {
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [exportStatus, setExportStatus] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
+  const exporting = useRef(false);
   const [workspace, setWorkspace] = useState(startInWorkspace);
   const [withDemo, setWithDemo] = useState(false);
   const [title, setTitle] = useState('Untitled song');
@@ -533,6 +537,30 @@ export function useStudio(startInWorkspace = false) {
     finally { setBusy(false); }
   }
 
+  async function downloadSong() {
+    if (locked || busy || exporting.current) return;
+    exporting.current = true; setExportBusy(true); setBusy(true); setError(''); setExportStatus('Preparing audio…');
+    const filename = songFilename(title);
+    try {
+      const blob = await exportSong(layers, volume, (stage) => { if (!disposed.current) setExportStatus(stage); });
+      if (disposed.current) return;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = filename;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setExportStatus('Your WAV is ready. Check your downloads.');
+    } catch (reason) {
+      if (!disposed.current) {
+        setExportStatus('');
+        report(reason instanceof RangeError ? new Error('This song is too large to download on this device. Try a desktop browser with more available memory.') : reason);
+      }
+    } finally {
+      exporting.current = false;
+      if (!disposed.current) { setExportBusy(false); setBusy(false); }
+    }
+  }
+
   function download(layer: Layer) {
     if (!layer.blob) return;
     const url = URL.createObjectURL(layer.blob);
@@ -549,7 +577,7 @@ export function useStudio(startInWorkspace = false) {
     locked, hasRecordings, previewCandidate,
     togglePlayback, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     beginEdit, updateClip, chooseTake, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
-    enableMicrophone, record, stopRecording, cancelSetup, download, reviewTake,
+    enableMicrophone, record, stopRecording, cancelSetup, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beat, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,
     setTempo: (value: number) => { stopMetronome(); setTempo(Math.max(40, Math.min(240, Number.isFinite(value) ? value : 84))); },
     setMetronomeMode: (mode: MetronomeMode) => { stopMetronome(); setMetronomeMode(mode); },
