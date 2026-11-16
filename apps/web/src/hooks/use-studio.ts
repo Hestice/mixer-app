@@ -20,6 +20,12 @@ import { getSong, openLocalSong, SongWriter, storageMessage, type SongContent } 
 
 export type RecordingState = 'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'processing' | 'review';
 
+type PlaybackOptions = {
+  cue?: () => Promise<void>;
+  closeCue?: () => void;
+  keptMix?: boolean;
+};
+
 export function useStudio(startInWorkspace = false) {
   const cloud = useCloud();
   const [songId, setSongId] = useState('');
@@ -40,6 +46,7 @@ export function useStudio(startInWorkspace = false) {
   const [playing, setPlaying] = useState(false);
   const [stopVersion, setStopVersion] = useState(0);
   const playbackRequest = useRef(0);
+  const startingPlayback = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [exportStatus, setExportStatus] = useState('');
@@ -291,25 +298,36 @@ export function useStudio(startInWorkspace = false) {
     setStopVersion(version => version + 1);
   }
 
-  async function togglePlayback(cue?: () => Promise<void>) {
-    if (locked || busy) return;
+  async function togglePlayback({ cue, closeCue, keptMix = false }: PlaybackOptions = {}) {
+    if (locked || busy || startingPlayback.current) return;
     setError('');
     const engine = getEngine();
     if (engine.playing) { pausePlayback(); return; }
-    if (workspace && !layers.length && !candidate) return;
+    if (workspace && !layers.length && (keptMix || !candidate)) return;
     const request = ++playbackRequest.current;
+    startingPlayback.current = true;
     setBusy(true);
+    if (keptMix) stopMetronome();
     try {
-      await Promise.all([prepareAudio(previewCandidate), cue?.()]);
+      const [prepared] = await Promise.all([prepareAudio(!keptMix && previewCandidate), cue?.()]);
       if (request !== playbackRequest.current || disposed.current) return;
-      await engine.play(mixRef.current);
-      if (request !== playbackRequest.current) { engine.reset(); return; }
+      await engine.play(keptMix ? prepared : mixRef.current);
+      if (request !== playbackRequest.current || disposed.current) { engine.reset(); return; }
+      if (keptMix) {
+        setSoloId(null);
+        setPreviewCandidate(false);
+      }
       engine.volume(volume);
       setPlaying(true);
     } catch (reason) {
-      if (request === playbackRequest.current) report(reason);
+      if (request === playbackRequest.current && !disposed.current) report(reason);
+    } finally {
+      startingPlayback.current = false;
+      if (!disposed.current) {
+        setBusy(false);
+        closeCue?.();
+      }
     }
-    finally { setBusy(false); }
   }
 
   async function seekSong(value: number) {
@@ -456,19 +474,6 @@ export function useStudio(startInWorkspace = false) {
       stopMetronome(); getEngine().pause(); setPlaying(false); setError('');
       setRecordingState('ready');
     } else void enableMicrophone(inputDevice, layer);
-  }
-
-  async function playKeptMix() {
-    if (locked || busy) return;
-    setBusy(true); setError(''); stopMetronome();
-    try {
-      await prepareAudio(false);
-      setSoloId(null); setPreviewCandidate(false);
-      getEngine().configureSession(layers, getEngine().position);
-      await getEngine().play(layers, true, getEngine().position);
-      getEngine().volume(volume); setPlaying(true);
-    } catch (reason) { report(reason); }
-    finally { setBusy(false); }
   }
 
   function enterWorkspace(useDemo: boolean) {
@@ -718,7 +723,7 @@ export function useStudio(startInWorkspace = false) {
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
     togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
-    beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, playKeptMix,
+    beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother,
     enableMicrophone, record, stopRecording, cancelCountIn, returnToTake, disconnectMicrophone, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, devices, inputDevice, previewMetronome,
     microphoneConnected: microphoneLabel !== null,

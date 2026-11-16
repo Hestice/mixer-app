@@ -2,7 +2,7 @@
 
 import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
-import { useTurntableMotion } from '../hooks/use-turntable-motion';
+import type { useTurntableMotion } from '../hooks/use-turntable-motion';
 import type { Studio } from '../hooks/use-studio';
 import { secondsForRotation } from '../lib/turntable-position';
 import { timeLabel } from '../lib/session';
@@ -34,20 +34,21 @@ type TurntableProps = {
   span: number;
   duration: number;
   compact: boolean;
+  motion: Pick<ReturnType<typeof useTurntableMotion>, 'record' | 'arm' | 'cueing'>;
+  onTogglePlayback: () => void;
+  onStopPlayback: () => void;
   onEdit: () => void;
   onToggleCompact: () => void;
 };
 
-export function StudioTurntable({ studio, span, duration, compact, onEdit, onToggleCompact }: TurntableProps) {
-  const { record, arm, cueing, cuePlayback, closeCue } = useTurntableMotion(studio.playing, {
-    position: studio.position, readPosition: studio.readSongPosition, stopVersion: studio.stopVersion,
-  });
+export function StudioTurntable({ studio, span, duration, compact, motion, onTogglePlayback, onStopPlayback, onEdit, onToggleCompact }: TurntableProps) {
+  const { record, arm, cueing } = motion;
   const gesture = useRef<Gesture | null>(null);
   const disabled = studio.locked || studio.busy;
   const canPlay = !!studio.layers.length || studio.playing;
 
   function toggle() {
-    if (canPlay && !disabled) void studio.togglePlayback(cuePlayback).finally(closeCue);
+    if (canPlay && !disabled) onTogglePlayback();
   }
 
   function seek(seconds: number) {
@@ -122,10 +123,7 @@ export function StudioTurntable({ studio, span, duration, compact, onEdit, onTog
         <button className="button button-light" disabled={!canPlay || disabled} onClick={toggle}>
           {studio.playing ? <Pause size={15} /> : <Play size={15} />}{studio.playing ? 'Pause' : cueing ? 'Cueing…' : 'Play song'}
         </button>
-        <button className="button button-light" disabled={studio.locked || (studio.busy && !cueing) || (!studio.playing && !cueing && studio.position === 0)} onClick={() => {
-          studio.stopPlayback();
-          closeCue();
-        }}><Square size={14} />Stop</button>
+        <button className="button button-light" disabled={studio.locked || (studio.busy && !cueing) || (!studio.playing && !cueing && studio.position === 0)} onClick={onStopPlayback}><Square size={14} />Stop</button>
         <time>{preciseTime(studio.position)}</time>
       </div>
       <div className="studio-deck-footer">

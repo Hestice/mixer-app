@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Studio } from '../hooks/use-studio';
+import { useTurntableMotion } from '../hooks/use-turntable-motion';
 import { timeLabel } from '../lib/session';
 import { Mic, Play, Pause, Square, Plus, Download, RotateCcw, Headphones, Check, X } from './icons';
 import { TakePicker } from './clip-editor';
@@ -30,6 +31,9 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   const { arrive, flight, finish, returnToSongs, rememberArtwork } = useRecordNavigation();
   const [notice, setNotice] = useState('');
   const [compactDeck, setCompactDeck] = useState(false);
+  const turntable = useTurntableMotion(studio.playing, {
+    position: studio.position, readPosition: studio.readSongPosition, stopVersion: studio.stopVersion,
+  });
   const narrow = useSyncExternalStore(subscribeToStudioWidth, readNarrowStudio, serverNarrowStudio);
   const [customizing,setCustomizing]=useState(false);
   const recordButton = useRef<HTMLButtonElement>(null);
@@ -52,6 +56,15 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
     if (studio.loadError) finish();
     else if (studio.localReady && studio.songId) arrive('studio', studio.songId);
   }, [arrive, finish, flight, studio.loadError, studio.localReady, studio.songId]);
+
+  function toggleTransport(keptMix = false) {
+    void studio.togglePlayback({ cue: turntable.cuePlayback, closeCue: turntable.closeCue, keptMix });
+  }
+
+  function stopTransport() {
+    studio.stopPlayback();
+    turntable.closeCue();
+  }
 
   function keep() {
     const name = studio.candidate?.name;
@@ -108,7 +121,8 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
         <button className="studio-toolbar-button studio-undo" aria-label="Undo last change" title="Undo last change" disabled={studio.locked || studio.busy || !studio.canUndoEdit} onClick={() => { studio.undoEdit(); setNotice('Last change undone.'); }}><RotateCcw size={16} aria-hidden="true" /></button>
       </header>
       <div className="studio-playback" data-compact={compactDeck}>
-        <StudioTurntable studio={studio} span={span} duration={duration} onEdit={() => setCustomizing(true)}
+        <StudioTurntable studio={studio} span={span} duration={duration} motion={turntable}
+          onTogglePlayback={toggleTransport} onStopPlayback={stopTransport} onEdit={() => setCustomizing(true)}
           compact={compactDeck} onToggleCompact={() => setCompactDeck(value => !value)} />
         <div className="studio-mix" role="group" aria-label="Song mix">
           <label>Song volume<input type="range" min="0" max="1" step=".01" value={studio.volume} onChange={event => studio.setVolume(Number(event.target.value))} /></label>
@@ -122,7 +136,8 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
         {studio.saveError && <div className="studio-save-error" role="alert"><p>{studio.saveError}</p><button className="text-button" onClick={() => void studio.retrySave()}>Retry save</button></div>}
         {studio.cloudStatus && <div className="studio-cloud-status" role="status"><span>{studio.cloudStatus}</span>{studio.cloudError && <><p>{studio.cloudError}</p><button className="text-button" onClick={studio.retryCloud}>Retry backup</button></>}</div>}
         <div className="studio-body">
-          <SongTimeline studio={studio} span={span} onRetake={retakeLayer}>
+          <SongTimeline studio={studio} span={span} onRetake={retakeLayer}
+            cueing={turntable.cueing} onToggleMix={() => toggleTransport(true)}>
             {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={state !== 'idle' || studio.busy} onClick={addLayer}><Mic size={17} />Record your first layer</button></div>}
             {!!studio.archivedLayers.length && <details className="layer-archive">
               <summary><Archive size={14} aria-hidden="true" /> Archived layers <span>{studio.archivedLayers.length}</span></summary>

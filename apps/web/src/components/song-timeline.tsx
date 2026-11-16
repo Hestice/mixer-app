@@ -16,10 +16,12 @@ type TimelineProps = {
   studio: Studio;
   span: number;
   onRetake: (id: string) => void;
+  cueing: boolean;
+  onToggleMix: () => void;
   children: ReactNode;
 };
 
-export function SongTimeline({ studio, span, onRetake, children }: TimelineProps) {
+export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, children }: TimelineProps) {
   const [zoom, setZoom] = useState(1);
   const [openLayer, setOpenLayer] = useState<string | null>(null);
   const optionsId = useId();
@@ -90,7 +92,7 @@ export function SongTimeline({ studio, span, onRetake, children }: TimelineProps
               </div>
               <ClipEditor layer={layer} studio={studio} span={span} draft={draft} timelineOnly />
             </div>
-            {expanded && <LayerOptions id={optionsId} layer={layer} studio={studio} span={span} onRetake={onRetake} />}
+            {expanded && <LayerOptions id={optionsId} layer={layer} studio={studio} span={span} onRetake={onRetake} cueing={cueing} onToggleMix={onToggleMix} />}
           </Fragment>;
         })}
         <div className="timeline-details">{children}</div>
