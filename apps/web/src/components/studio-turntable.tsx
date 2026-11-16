@@ -15,6 +15,7 @@ type Gesture = {
   pointer: number;
   x: number;
   y: number;
+  startedAt: number;
   angle: number | null;
   position: number;
   dragging: boolean;
@@ -62,7 +63,7 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = {
-      pointer: event.pointerId, x: event.clientX, y: event.clientY, angle: pointerAngle(event),
+      pointer: event.pointerId, x: event.clientX, y: event.clientY, startedAt: event.timeStamp, angle: pointerAngle(event),
       position: studio.position, dragging: false, scratching: false,
     };
   }
@@ -73,7 +74,7 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
     if (!drag.dragging) {
       if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
       drag.dragging = true;
-      drag.scratching = studio.beginScrub();
+      drag.scratching = studio.beginScrub((event.timeStamp - drag.startedAt) / 1000);
       drag.position = studio.readSongPosition();
     }
     const angle = pointerAngle(event);

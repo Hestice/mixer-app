@@ -1,13 +1,13 @@
 import { clipBounds } from './clip-edits';
 import type { Layer } from './session';
 
-const GRAIN_SECONDS = .056;
+export const SCRATCH_HOP_SECONDS = .03;
 
 /** Read a short section of the audible mix in the direction and at the speed of the drag. */
-export function scratchBuffer(context: AudioContext, buffers: ReadonlyMap<string, AudioBuffer>, layers: Layer[], position: number, velocity: number) {
-  const rate = Math.max(.65, Math.min(5, Math.abs(velocity)));
-  const step = Math.sign(velocity) * rate / context.sampleRate;
-  const frames = Math.round(GRAIN_SECONDS * context.sampleRate);
+export function scratchBuffer(context: AudioContext, buffers: ReadonlyMap<string, AudioBuffer>, layers: Layer[], position: number, rate: number) {
+  const step = rate / context.sampleRate;
+  const hopFrames = Math.round(SCRATCH_HOP_SECONDS * context.sampleRate);
+  const frames = hopFrames * 2;
   const grain = context.createBuffer(2, frames, context.sampleRate);
   const output = [grain.getChannelData(0), grain.getChannelData(1)];
   const lastPosition = position + frames * step;
@@ -35,11 +35,13 @@ export function scratchBuffer(context: AudioContext, buffers: ReadonlyMap<string
     }
   }
 
-  // Taper the snippets so they can overlap without clicks at their boundaries.
-  for (let frame = 0; frame < frames; frame++) {
-    const envelope = Math.min(1, frame / (frames * .2), (frames - 1 - frame) / (frames * .45));
-    output[0][frame] *= envelope;
-    output[1][frame] *= envelope;
+  // The fading halves add to unity when consecutive snippets read the same samples.
+  for (let frame = 0; frame < hopFrames; frame++) {
+    const fadeIn = (1 - Math.cos(Math.PI * frame / hopFrames)) / 2;
+    output[0][frame] *= fadeIn;
+    output[1][frame] *= fadeIn;
+    output[0][hopFrames + frame] *= 1 - fadeIn;
+    output[1][hopFrames + frame] *= 1 - fadeIn;
   }
   return grain;
 }

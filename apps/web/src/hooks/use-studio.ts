@@ -355,8 +355,8 @@ export function useStudio(startInWorkspace = false) {
     setPosition(position); setPlaying(engine.playing);
   }
 
-  function beginScrub() {
-    if (locked || busy || !getEngine().beginScrub()) return false;
+  function beginScrub(heldFor = 0) {
+    if (locked || busy || !getEngine().beginScrub(heldFor)) return false;
     if (metronomePreview && beatOffset !== undefined) stopMetronome(true);
     return true;
   }

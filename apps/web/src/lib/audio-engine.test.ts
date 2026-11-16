@@ -292,14 +292,16 @@ test('a playing scrub pitches the audible trimmed mix in the drag direction and 
   assert.equal(context.sources.length, 2, 'a click on the ruler must stay quiet');
   engine.scrubTo(layers, 1.2, true);
   const reverse = context.sources.at(-1)!.buffer!.getChannelData(0);
-  assert.ok(reverse[12] > reverse[24], 'a backward drag reads samples in reverse');
-  assert.ok(reverse[12] > .2 && reverse[12] < .25, 'the sample follows the trim, placement and layer volume without the muted track');
+  assert.ok(reverse[20] > reverse[40], 'a backward drag reads samples in reverse');
+  const fastRate = (reverse[20] - reverse[40]) / (.75 * 20 * .5 / 4000);
+  assert.ok(Math.abs(fastRate - 1.7) < .001, 'fast scrubbing limits how far pitch rises');
+  assert.ok(reverse[30] > .2 && reverse[30] < .25, 'the sample follows the trim, placement and layer volume without the muted track');
   assert.equal(reverse[0], 0);
-  assert.equal(reverse.at(-1), 0);
+  assert.ok(Math.abs(reverse.at(-1)!) < .001);
   context.currentTime += .04;
   engine.scrubTo(layers, 1.4, true);
   const forward = context.sources.at(-1)!.buffer!.getChannelData(1);
-  assert.ok(forward[12] < forward[24], 'dragging the other way changes direction');
+  assert.ok(forward[20] < forward[40], 'dragging the other way changes direction');
   context.currentTime += .5;
   assert.equal(engine.position, 1.4, 'the cursor holds still while the pointer is held');
   engine.sync(layers);
@@ -331,3 +333,36 @@ test('stopping during a scratch cancels it and an ensuing release cannot restart
   assert.equal(engine.playing, false);
   engine.dispose();
 });
+
+
+for (const direction of [1, -1]) {
+  test(`a steady ${direction === 1 ? 'forward' : 'reverse'} jog plays at original pitch across overlapping samples`, async () => {
+    const engine = new AudioEngine();
+    await engine.ready();
+    const audio = Float32Array.from({ length: 4000 }, (_, frame) => Math.sin(frame * .71));
+    engine.addSamples('take', audio, 1000);
+    const layers = [{ id: 'take', name: 'Guitar', kind: 'recording' as const, enabled: true, volume: 1, duration: 4 }];
+    engine.configureSession(layers);
+    await engine.play(layers);
+    const context = FakeContext.current;
+    context.currentTime = 1.54;
+    assert.equal(engine.beginScrub(.15), true);
+    engine.scrubTo(layers, 1.5 + direction * .15, true);
+    const first = context.sources.at(-1)!;
+    context.currentTime += .031;
+    engine.scrubTo(layers, 1.5 + direction * .182, true);
+    const second = context.sources.at(-1)!;
+    assert.notEqual(first, second);
+    assert.ok(Math.abs(second.started[0] - first.started[0] - .03) < .000001);
+
+    const firstSamples = first.buffer!.getChannelData(0);
+    const secondSamples = second.buffer!.getChannelData(0);
+    const firstOverlapFrame = 1500 + direction * 170;
+    for (let frame = 0; frame < 30; frame++) {
+      const overlapped = firstSamples[30 + frame] + secondSamples[frame];
+      assert.ok(Math.abs(overlapped - audio[firstOverlapFrame + direction * frame]) < .00001,
+        'continuous motion should reproduce the source without a pitch shift or volume flutter');
+    }
+    engine.dispose();
+  });
+}

@@ -2,18 +2,8 @@ import { readRecording } from './recording-storage';
 import { estimateBeatAlignment } from './beat-alignment';
 import { createSongOutput } from './audio-output';
 import { clipBounds, playbackWindow } from './clip-edits';
-import { scratchBuffer } from './scratch-buffer';
+import { ScratchPlayback } from './scratch-playback';
 import { extractPeaks, type Layer } from './session';
-
-const SCRATCH_INTERVAL = .032;
-const SCRATCH_RELEASE = .012;
-
-type Scrub = {
-  gain: GainNode;
-  sources: Set<AudioBufferSourceNode>;
-  lastTime: number;
-  lastPosition: number;
-};
 
 /** The tour loops; the recording workspace plays each part once on a shared clock. */
 export class AudioEngine {
@@ -22,7 +12,7 @@ export class AudioEngine {
   private buffers = new Map<string, AudioBuffer>();
   private sources = new Map<string, { source: AudioBufferSourceNode; gain: GainNode }>();
   private loading: Promise<void> | null = null;
-  private scrub: Scrub | null = null;
+  private scrub: ScratchPlayback | null = null;
   private startedAt = 0;
   private pausedAt = 0;
   private loopDuration = 80 / 7;
@@ -128,73 +118,32 @@ export class AudioEngine {
     if (wasPlaying && this.context && position < this.loopDuration) this.start(layers, this.context.currentTime + .04, this.pausedAt);
   }
 
-  beginScrub() {
+  beginScrub(heldFor = 0) {
     if (!this.context || !this.master || !this.playing || this.looping || this.scrub) return false;
     this.pausedAt = this.position;
     this.stopSources();
-    const gain = this.context.createGain();
-    gain.gain.value = .8;
-    gain.connect(this.master);
-    this.scrub = {
-      gain, sources: new Set(), lastTime: this.context.currentTime - SCRATCH_INTERVAL,
-      lastPosition: this.pausedAt,
-    };
+    this.scrub = new ScratchPlayback(this.context, this.master, this.buffers, this.pausedAt, heldFor);
     return true;
   }
 
   scrubTo(layers: Layer[], position: number, audible: boolean) {
-    const { scrub, context } = this;
-    if (!scrub || !context) return;
+    if (!this.scrub) return;
     this.pausedAt = position;
-    if (!audible) {
-      scrub.lastPosition = position;
-      return;
-    }
-    const now = context.currentTime;
-    const elapsed = now - scrub.lastTime;
-    const distance = position - scrub.lastPosition;
-    if (elapsed < SCRATCH_INTERVAL - .001 || !distance) return;
-    const velocity = distance / Math.min(.08, elapsed);
-    const lead = Math.min(Math.abs(distance), Math.min(5, Math.abs(velocity)) * .022);
-    const source = context.createBufferSource();
-    source.buffer = scratchBuffer(context, this.buffers, layers, position - Math.sign(distance) * lead, velocity);
-    source.connect(scrub.gain);
-    scrub.sources.add(source);
-    source.onended = () => {
-      source.disconnect();
-      scrub.sources.delete(source);
-      if (this.scrub !== scrub && !scrub.sources.size) scrub.gain.disconnect();
-    };
-    source.start(now);
-    scrub.lastTime = now;
-    scrub.lastPosition = position;
+    this.scrub.move(layers, position, audible);
   }
 
   endScrub(layers: Layer[]) {
     if (!this.scrub || !this.context) return false;
-    this.clearScrub(SCRATCH_RELEASE);
-    if (this.pausedAt < this.loopDuration) this.start(layers, this.context.currentTime + SCRATCH_RELEASE, this.pausedAt);
+    const release = this.clearScrub(true);
+    if (this.pausedAt < this.loopDuration) this.start(layers, this.context.currentTime + release, this.pausedAt);
     else this.playing = false;
     return true;
   }
 
-  private clearScrub(fade = 0) {
-    const scrub = this.scrub;
-    if (!scrub) return;
+  private clearScrub(fade = false) {
+    const release = this.scrub?.stop(fade) ?? 0;
     this.scrub = null;
-    if (fade && this.context && scrub.sources.size) {
-      const now = this.context.currentTime;
-      scrub.gain.gain.setValueAtTime(scrub.gain.gain.value, now);
-      scrub.gain.gain.linearRampToValueAtTime(0, now + fade);
-      for (const source of scrub.sources) source.stop(now + fade);
-    } else {
-      for (const source of scrub.sources) {
-        source.onended = null;
-        source.stop();
-        source.disconnect();
-      }
-      scrub.gain.disconnect();
-    }
+    return release;
   }
 
   private start(layers: Layer[], when: number, offset: number) {
