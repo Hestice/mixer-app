@@ -11,7 +11,7 @@ import { recordingDelay, recordedPlacement } from '../lib/recording-timing';
 import { AudioEngine } from '../lib/audio-engine';
 import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
-import { Metronome, canSoundClick, type MetronomeMode } from '../lib/metronome';
+import { Metronome, canSoundClick, metronomeBeatAt, type MetronomeMode } from '../lib/metronome';
 import { encodeWavBytes } from '../lib/wav';
 import { exportSong, songFilename } from '../lib/song-export';
 import { useCloud } from '../components/cloud-provider';
@@ -72,7 +72,7 @@ export function useStudio(startInWorkspace = false) {
   const [countIn, setCountIn] = useState(true);
   const [metronomeMode, setMetronomeMode] = useState<MetronomeMode>('visual');
   const [headphones, setHeadphones] = useState(false);
-  const [beat, setBeat] = useState(-1);
+  const [beatIndex, setBeatIndex] = useState(-1);
   const [metronomePreview, setMetronomePreview] = useState(false);
   const [livePeaks, setLivePeaks] = useState<number[]>([]);
   const [microphoneLabel, setMicrophoneLabel] = useState('Microphone not connected');
@@ -86,7 +86,7 @@ export function useStudio(startInWorkspace = false) {
   const capturePlacement = useRef({ position: 0, delay: 0 });
   const [recordFrom, setRecordFrom] = useState(0);
   const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const beatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const disposed = useRef(false);
   const hasRecordings = layers.some((layer) => layer.recorded) || !!candidate?.recorded;
   const locked = accountBlocked || (workspace && !localReady) || ['requesting', 'countdown', 'recording', 'processing'].includes(recordingState);
@@ -242,7 +242,7 @@ export function useStudio(startInWorkspace = false) {
       clearInterval(interval);
       runRef.current++;
       if (recordingTimer.current) clearInterval(recordingTimer.current);
-      if (previewTimer.current) clearInterval(previewTimer.current);
+      if (beatTimer.current) clearInterval(beatTimer.current);
       recorderRef.current?.dispose(); recorderRef.current = null;
       metronomeRef.current?.stop();
       engineRef.current?.dispose();
@@ -478,9 +478,23 @@ export function useStudio(startInWorkspace = false) {
 
   function stopMetronome() {
     metronomeRef.current?.stop();
-    if (previewTimer.current) clearInterval(previewTimer.current);
-    previewTimer.current = null;
-    setMetronomePreview(false); setBeat(-1);
+    if (beatTimer.current) clearInterval(beatTimer.current);
+    beatTimer.current = null;
+    setMetronomePreview(false); setBeatIndex(-1);
+  }
+
+  function startVisualBeat(context: AudioContext, when: number, beatSeconds: number, until = Infinity) {
+    if (until <= when) return;
+    beatTimer.current = setInterval(() => {
+      const time = context.currentTime;
+      if (time >= until) {
+        if (beatTimer.current) clearInterval(beatTimer.current);
+        beatTimer.current = null;
+        setBeatIndex(-1);
+        return;
+      }
+      setBeatIndex(metronomeBeatAt(time, when, beatSeconds));
+    }, 30);
   }
 
   function releaseMicrophone() {
@@ -586,7 +600,9 @@ export function useStudio(startInWorkspace = false) {
       engine.volume(volume);
       engine.playAt(backingLayers, startAt, position);
       metronomeRef.current = new Metronome(context);
-      metronomeRef.current.start(countAt + OUTPUT_DELAY, tempo, canSoundClick(metronomeMode, headphones));
+      const beatAt = countAt + OUTPUT_DELAY;
+      metronomeRef.current.start(beatAt, tempo, canSoundClick(metronomeMode, headphones));
+      startVisualBeat(context, beatAt, beatSeconds, metronomeMode === 'off' ? startAt : Infinity);
       const update = () => {
         const seconds = context.currentTime - startAt;
         if (seconds < 0) {
@@ -595,7 +611,6 @@ export function useStudio(startInWorkspace = false) {
           setRecordingState('recording'); setCountdown(0); setElapsed(seconds); setPosition(position + seconds);
           setLivePeaks((current) => [...current.slice(-63), Math.min(1, levelRef.current * 3)]);
         }
-        setBeat(metronomeMode !== 'off' || seconds < 0 ? Math.max(0, Math.floor((context.currentTime - countAt) / beatSeconds)) % 4 : -1);
       };
       update();
       recordingTimer.current = setInterval(update, 80);
@@ -626,7 +641,7 @@ export function useStudio(startInWorkspace = false) {
       metronomeRef.current = new Metronome(context);
       metronomeRef.current.start(when, tempo, canSoundClick(metronomeMode, headphones));
       setMetronomePreview(true);
-      previewTimer.current = setInterval(() => setBeat(Math.max(0, Math.floor((context.currentTime - when) / (60 / tempo))) % 4), 40);
+      startVisualBeat(context, when, 60 / tempo);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
   }
@@ -687,7 +702,7 @@ export function useStudio(startInWorkspace = false) {
     togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
     enableMicrophone, record, stopRecording, cancelSetup, download, downloadSong, exportStatus, exportBusy, reviewTake,
-    partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beat, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,
+    partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,
     setTempo: (value: number) => { stopMetronome(); setTempo(Math.max(40, Math.min(240, Number.isFinite(value) ? value : 84))); },
     setMetronomeMode: (mode: MetronomeMode) => { stopMetronome(); setMetronomeMode(mode); },
     setHeadphones: (value: boolean) => { stopMetronome(); setHeadphones(value); if (!value && metronomeMode === 'sound') setMetronomeMode('visual'); },

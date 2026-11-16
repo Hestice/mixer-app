@@ -10,7 +10,7 @@ import { Waveform } from './waveform';
 import { useRecordNavigation } from './record-transition';
 import { StudioTurntable } from './studio-turntable';
 import { RecordCustomizer } from './record-customizer';
-import { Archive, ArrowLeft, ChevronDown, SlidersHorizontal } from 'lucide-react';
+import { Archive, ArrowLeft, ChevronDown } from 'lucide-react';
 import { LibraryActions } from './library-actions';
 import { SongTimeline, preciseTime } from './song-timeline';
 import '../app/studio.css';
@@ -64,10 +64,11 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   const recording = state === 'recording';
   const review = state === 'review' && !!studio.candidate;
   const setup = state === 'idle' || state === 'ready';
-  const captureOptionsOpen = captureOptions ?? (review || !narrow);
+  const captureOptionsOpen = !narrow || (captureOptions ?? review);
   const duration = Math.max(0, ...studio.layers.map((layer) => clipBounds(layer).end));
   const span = Math.max(16, duration + 4, studio.candidate ? clipBounds(studio.candidate).end + 4 : 0, recording ? studio.recordFrom + studio.elapsed + 4 : 0);
   const meter = Math.min(100, studio.inputLevel * 100);
+  const beat = studio.beatIndex % 4;
   const action = { idle: 'Connect microphone', requesting: 'Connecting microphone…', ready: 'Record layer', countdown: 'Cancel count-in', recording: 'Stop recording', processing: 'Preparing take…', review: studio.retakeLayerId ? 'Use this take' : 'Keep this layer' }[state];
 
   useLayoutEffect(() => { if (studio.songId) rememberArtwork(studio.songId, studio.artwork); }, [rememberArtwork, studio.songId, studio.artwork]);
@@ -156,6 +157,11 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
                 <span className="studio-mic-icon" aria-hidden="true"><Mic size={21} /></span>
                 <div>
                   <h2 id="capture-title">{review ? 'Review take' : recording ? 'Recording' : 'Record a layer'}</h2>
+                  <button className="studio-toolbar-button studio-capture-toggle" aria-controls="studio-capture-options"
+                    aria-expanded={captureOptionsOpen} onClick={() => setCaptureOptions(!captureOptionsOpen)}>
+                    {review ? 'Take review' : recording ? 'Recording details' : 'Recording setup'}
+                    <ChevronDown className="studio-capture-chevron" size={14} aria-hidden="true" />
+                  </button>
                   {state === 'countdown' ? (
                     <p className="capture-position" role="status">{studio.countdown ? `Starting in ${studio.countdown}…` : 'Getting ready…'}</p>
                   ) : (
@@ -165,12 +171,6 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
                   )}
                 </div>
               </div>
-              <button className="studio-toolbar-button studio-capture-toggle" aria-label="Recording settings" aria-controls="studio-capture-options"
-                title={captureOptionsOpen ? 'Hide recording settings' : 'Show recording settings'} aria-expanded={captureOptionsOpen}
-                onClick={() => setCaptureOptions(!captureOptionsOpen)}>
-                <SlidersHorizontal size={17} aria-hidden="true" />
-                <ChevronDown className="studio-capture-chevron" size={12} aria-hidden="true" />
-              </button>
               <button ref={recordButton} className={`button studio-record-action ${recording ? 'button-record' : 'button-dark'}`}
                 disabled={studio.busy || state === 'requesting' || state === 'processing'} onClick={capture}>
                 {recording ? <Square size={16} fill="currentColor" /> : review ? <Check size={16} /> : state === 'countdown' ? <X size={16} /> : <Mic size={16} />}
@@ -191,7 +191,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
                     <p className="studio-help">{studio.headphones ? 'Keep headphone volume low. Wired headphones are best for recording in time.' : 'Use headphones to enable clicks. Speakers can put the click and song back into your microphone.'}</p>
                     <button className="text-button" disabled={studio.metronomeMode === 'off'} onClick={() => void studio.previewMetronome()}>{studio.metronomePreview ? 'Stop beat' : 'Try the beat'}</button>
                   </fieldset></details>
-                  <div className="studio-beats" aria-label={state === 'countdown' ? `${studio.countdown} beats until recording` : 'Metronome in four beats'}>{[0, 1, 2, 3].map((index) => <span key={index} className={studio.beat === index ? 'active' : ''} aria-hidden="true">{index + 1}</span>)}</div>
+                  <div className="studio-beats" aria-label={state === 'countdown' ? `${studio.countdown} beats until recording` : 'Metronome in four beats'}>{[0, 1, 2, 3].map((index) => <span key={index} className={beat === index ? 'active' : ''} aria-hidden="true">{index + 1}</span>)}</div>
                 </>}
                 {setup && studio.devices.length > 1 && <label className="studio-field">Microphone<select value={studio.inputDevice} disabled={studio.busy} onChange={(event) => studio.changeInput(event.target.value)}>{studio.devices.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label || 'Microphone'}</option>)}</select></label>}
                 {!review && <div className="studio-input"><span>{studio.microphoneLabel}</span><div role="meter" aria-label="Microphone input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(meter)} className={`studio-input-meter ${meter > 95 ? 'clipping' : ''}`}><i style={{ width: `${meter}%` }} /></div><small>{meter > 95 ? 'Too loud — move back or lower your input gain.' : state === 'ready' ? meter > 1 ? 'Signal detected. You’re ready.' : 'Sing or play a note to check your level.' : 'Microphone audio is never played through your speakers.'}</small></div>}
@@ -208,6 +208,8 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
         </div>
       </div>
     </main>
+    {studio.beatIndex >= 0 && <div key={studio.beatIndex} className="studio-beat-pulse" aria-hidden="true"
+      data-downbeat={beat === 0} data-side={beat % 2 === 0 ? 'left' : 'right'} />}
     {studio.error && <div className="error-toast" role="alert"><span>{studio.error}</span><button onClick={() => studio.setError('')} aria-label="Dismiss message"><X size={18} /></button></div>}
   </div>;
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { encodeWav } from './wav';
-import { Metronome, canSoundClick } from './metronome';
+import { Metronome, canSoundClick, metronomeBeatAt } from './metronome';
 
 test('WAV download preserves microphone sample count, sample rate and silence', async () => {
   const blob = encodeWav(new Float32Array([0, .5, -.5, 1, -1]), 48000);
@@ -53,6 +53,15 @@ test('canceling a count-in discards it and a new take begins with an empty buffe
   processor.process([[new Float32Array(8).fill(.5)]], [[new Float32Array(8)]]);
   processor.port.onmessage({ data: { type: 'stop' } });
   assert.deepEqual(Array.from(messages.find((message) => message.type === 'samples').samples), Array(8).fill(.5));
+});
+
+test('visual beats start on the audio clock and advance across measures', () => {
+  assert.equal(metronomeBeatAt(.99, 1, .5), -1);
+  assert.equal(metronomeBeatAt(1, 1, .5), 0);
+  assert.equal(metronomeBeatAt(1.49, 1, .5), 0);
+  assert.equal(metronomeBeatAt(1.5, 1, .5), 1);
+  assert.equal(metronomeBeatAt(3, 1, .5), 4);
+  assert.equal(metronomeBeatAt(5.25, 1, .5), 8);
 });
 
 test('clicks are silent without explicit headphone confirmation and route only to output', () => {
