@@ -39,6 +39,7 @@ export async function syncSong(id: string, ownerId: string, remote: CloudTranspo
   let cloud = await remote.get(link.remoteId);
   check();
   if (cloud && cloud.owner_id !== ownerId) throw new Error('The cloud song belongs to another account.');
+  const createdAt = cloud?.content.createdAt ?? (link.id === link.remoteId || link.creationDateKnown ? song.createdAt : undefined);
   const publishedAudio = new Set(cloud ? manifestAudio(cloud.content).map((audio) => audio.path) : []);
   // A response may have been lost after the server committed. Acknowledge that
   // exact operation before considering a fork or uploading a newer local edit.
@@ -76,7 +77,8 @@ export async function syncSong(id: string, ownerId: string, remote: CloudTranspo
     const previousId = link.remoteId;
     link = await updateBackup(id, (current) => {
       if (current.remoteId !== previousId) throw new SyncCanceledError();
-      return { ...current, remoteId: crypto.randomUUID(), remoteRevision: 0, remoteLibraryRevision: undefined, syncedLocalRevision: 0, recovered: true, attempt: undefined };
+      return { ...current, remoteId: crypto.randomUUID(), remoteRevision: 0, remoteLibraryRevision: undefined, syncedLocalRevision: 0, recovered: true,
+        creationDateKnown: createdAt != null, attempt: undefined };
     });
   }
   check();
@@ -89,7 +91,7 @@ export async function syncSong(id: string, ownerId: string, remote: CloudTranspo
   const attempt = link.attempt!;
   const contents = cloudLifecycle && lifecycle(cloudLifecycle) !== 'active'
     ? { ...song, archivedAt: cloudLifecycle.archivedAt, deletedAt: cloudLifecycle.deletedAt ?? song.deletedAt } : song;
-  const manifest = await makeManifest(contents, ownerId, async (path, blob) => { check(); if (!publishedAudio.has(path)) await remote.upload(path, blob); check(); }, link.recovered);
+  const manifest = await makeManifest({ ...contents, createdAt }, ownerId, async (path, blob) => { check(); if (!publishedAudio.has(path)) await remote.upload(path, blob); check(); }, link.recovered);
   check();
   let result: CloudSong;
   try { result = await remote.save(link.remoteId, link.remoteRevision, attempt.commitId, manifest); }
@@ -132,7 +134,8 @@ export async function openCloudSong(remoteId: string, ownerId: string, remote: C
   check();
   const id = local?.id ?? crypto.randomUUID();
   const revision = (local?.revision ?? 0) + 1;
-  await installCloudSong({ ...content, id, revision, ownerId, createdAt: local?.createdAt ?? Date.now(), updatedAt: Date.parse(cloud.updated_at) },
-    { id, ownerId, remoteId, remoteRevision: cloud.revision, syncedLocalRevision: revision }, local?.revision ?? 0);
+  await installCloudSong({ ...content, id, revision, ownerId, createdAt: cloud.content.createdAt ?? local?.createdAt ?? Date.now(), updatedAt: Date.parse(cloud.updated_at) },
+    { id, ownerId, remoteId, remoteRevision: cloud.revision, syncedLocalRevision: revision,
+      creationDateKnown: cloud.content.createdAt != null || link?.creationDateKnown || undefined }, local?.revision ?? 0);
   return id;
 }

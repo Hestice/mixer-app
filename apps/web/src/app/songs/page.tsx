@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Archive, ChevronRight, CloudCheck, CloudDownload, CloudUpload, HardDrive, Library, Plus } from 'lucide-react';
 import { listSongs, updateSavedSong, type SongSummary } from '../../lib/song-store';
 import { timeLabel } from '../../lib/session';
@@ -15,7 +16,9 @@ import type { BackupLink } from '../../lib/backup-store';
 import { CloudAccount } from '../../components/cloud-account';
 import { useCloud } from '../../components/cloud-provider';
 import { cloudMessage } from '../../lib/supabase-transport';
+import { ArchiveCrate } from '../../components/archive-crate';
 import '../studio.css';
+import './archive.css';
 
 function SongArtwork({ id, title, artwork, opening = false, returning = false }: { id: string; title: string; artwork?: RecordArt; opening?: boolean; returning?: boolean }) {
   return <span className={`song-artwork${opening ? ' is-opening' : ''}${returning ? ' is-returning' : ''}`} aria-hidden="true">
@@ -35,6 +38,7 @@ interface SongRow extends Lifecycle {
   layerCount: number;
   duration: number;
   hasTake: boolean;
+  createdAt?: number;
   updatedAt: number;
 }
 
@@ -43,23 +47,44 @@ function cloudRow(remote: CloudSong, local?: SongSummary): SongRow {
   const layers = content.layers.filter(layer => lifecycle(layer) === 'active');
   return {
     id: local?.id ?? `cloud-${remote.id}`, local, remote, editRemote: true,
-    title: content.title.trim() || 'Untitled song', artwork: content.artwork, updatedAt: Date.parse(remote.updated_at),
+    title: content.title.trim() || 'Untitled song', artwork: content.artwork, createdAt: content.createdAt, updatedAt: Date.parse(remote.updated_at),
     archivedAt: content.archivedAt, deletedAt: content.deletedAt,
     layerCount: layers.length, hasTake: !!content.candidate,
     duration: Math.max(0, ...layers.map(layer => clipBounds(layer).end), content.candidate ? clipBounds(content.candidate).end : 0),
   };
 }
 
+function setArchiveView(archive: boolean, replace = false) {
+  const url = new URL(window.location.href);
+  if (archive) url.searchParams.set('view', 'archive');
+  else url.searchParams.delete('view');
+  if (url.href === window.location.href) return;
+  if (replace) window.history.replaceState(null, '', url);
+  else window.history.pushState(null, '', url);
+}
+
 export default function SongsPage() {
+  return <Suspense fallback={<main className="songs-page"><p role="status">Opening your collection…</p></main>}>
+    <SongsCollection />
+  </Suspense>;
+}
+
+function SongsCollection() {
+  const isArchived = useSearchParams().get('view') === 'archive';
   const cloud = useCloud();
   const { flight, enterStudio, arrive } = useRecordNavigation();
   const [songs, setSongs] = useState<SongSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
-  const [view, setView] = useState<'active' | 'archived'>('active');
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [selectedArchive, setSelectedArchive] = useState<string[]>([]);
+  const [restoreNotice, setRestoreNotice] = useState('');
+  const [archiveSnapshot, setArchiveSnapshot] = useState<SongRow[]>();
+  const songsTab = useRef<HTMLButtonElement>(null);
+  const restoringArchive = useRef(false);
+  const hadArchived = useRef(false);
   const [busy, setBusy] = useState('');
   const [opening, setOpening] = useState<string | null>(null);
   const openingRun = useRef(0);
@@ -72,7 +97,13 @@ export default function SongsPage() {
     window.addEventListener('pageshow', reset);
     return () => { openingRun.current++; window.removeEventListener('pageshow', reset); };
   }, []);
-  useEffect(() => { setSelected([]); setSelecting(false); setActionError(''); }, [cloud.user?.id]);
+  useEffect(() => {
+    setSelected([]);
+    setSelecting(false);
+    setSelectedArchive([]);
+    setActionError('');
+    setRestoreNotice('');
+  }, [cloud.user?.id]);
   useEffect(() => {
     let canceled = false;
     const refresh = () => {
@@ -92,34 +123,84 @@ export default function SongsPage() {
   const localRows = visible.map((song): SongRow => {
     const link = cloud.links.find(item => item.id === song.id && item.ownerId === cloud.user?.id);
     const remote = cloud.remoteSongs.find(item => item.id === link?.remoteId);
+    // Older backups did not include a creation date. A downloaded copy records its install time locally.
+    const createdAt = remote?.content.createdAt ?? (!link || link.id === link.remoteId || link.creationDateKnown ? song.createdAt : undefined);
     const remoteAhead = !!link && !!remote && remote.revision > link.remoteRevision && song.revision <= link.syncedLocalRevision && !link.libraryEdit;
     if (remote && (remoteAhead || lifecycle(remote.content) === 'deleted'
-      || remote.content.archivedAt != null && remote.revision > (link?.remoteRevision ?? 0) && !link?.libraryEdit)) return { ...cloudRow(remote, song), link };
-    return { ...song, local: song, remote, link, editRemote: false };
+      || remote.content.archivedAt != null && remote.revision > (link?.remoteRevision ?? 0) && !link?.libraryEdit)) return { ...cloudRow(remote, song), createdAt, link };
+    return { ...song, createdAt, local: song, remote, link, editRemote: false };
   });
   const remoteRows = cloud.remoteSongs.filter(song => !cloud.links.some(link => link.ownerId === cloud.user?.id && link.remoteId === song.id && visible.some(local => local.id === link.id))).map(song => cloudRow(song));
   const catalogue = [...localRows, ...remoteRows];
-  const hasArchived = catalogue.some(row => lifecycle(row) === 'archived');
-  const isArchived = view === 'archived' && hasArchived;
-  const rows = catalogue.filter(row => lifecycle(row) === (isArchived ? 'archived' : 'active'))
+  const archiveRows = archiveSnapshot ?? catalogue.filter(row => lifecycle(row) === 'archived');
+  const hasArchived = archiveRows.length > 0;
+  const rows = catalogue.filter(row => lifecycle(row) === 'active')
     .sort((a, b) => b.updatedAt - a.updatedAt);
+  const selectedArchiveRows = archiveRows.filter(row => selectedArchive.includes(row.id));
+  const canManage = (row: SongRow) => !row.editRemote || cloud.online;
   const hasCloudCopy = (row: SongRow) => !!row.remote || (row.link?.remoteRevision ?? 0) > 0;
   const canBackUp = (row: SongRow) => !isArchived && !!cloud.user && !!row.local && !row.local.ownerId;
   const groups = [
     { key: 'cloud', title: 'Backed up', icon: CloudCheck, rows: rows.filter(hasCloudCopy) },
     { key: 'device', title: 'On this device', icon: HardDrive, rows: rows.filter(row => !hasCloudCopy(row)) },
   ];
-  useEffect(() => { if (!hasArchived && !loading) setView('active'); }, [hasArchived, loading]);
-  const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  async function manageSong(row: SongRow, action: LibraryAction) {
+  useEffect(() => {
+    // Preserve a direct Archive URL while local and cloud songs are loading.
+    if (isArchived && hadArchived.current && !hasArchived) setArchiveView(false, true);
+    hadArchived.current = isArchived && hasArchived;
+  }, [hasArchived, isArchived]);
+  useEffect(() => {
+    setSelected([]);
+    setSelecting(false);
+    setSelectedArchive([]);
     setActionError('');
+  }, [isArchived]);
+  const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  async function applySongAction(row: SongRow, action: LibraryAction) {
     if (row.editRemote && row.remote) {
       try { await cloud.manageRemote(row.remote.id, row.remote.revision, action); }
       catch (reason) { if (reason instanceof Error) throw reason; throw new Error(cloudMessage(reason)); }
     } else if (row.local) {
-      try { await updateSavedSong(row.local.id, row.local.revision, cloud.user?.id, action); }
-      finally { setSongs(await listSongs().catch(() => songs)); }
-      setSelected(current => current.filter(id => id !== row.local?.id));
+      await updateSavedSong(row.local.id, row.local.revision, cloud.user?.id, action);
+    }
+  }
+  async function manageSong(row: SongRow, action: LibraryAction) {
+    setActionError('');
+    setRestoreNotice('');
+    try {
+      await applySongAction(row, action);
+      setSelected(current => current.filter(id => id !== row.id));
+      if (action.type === 'restore' || action.type === 'delete') {
+        setSelectedArchive(current => current.filter(id => id !== row.id));
+      }
+    } finally {
+      if (!row.editRemote) await listSongs().then(setSongs).catch(() => {});
+    }
+  }
+  async function restoreArchiveSongs(rows: SongRow[], animate: (restored: Set<string>) => Promise<void>) {
+    if (busy || restoringArchive.current || !rows.length || rows.some(row => !canManage(row))) return;
+    restoringArchive.current = true;
+    setBusy('restore');
+    setArchiveSnapshot(archiveRows);
+    setActionError('');
+    setRestoreNotice('');
+    try {
+      const results = await Promise.allSettled(rows.map(row => applySongAction(row, { type: 'restore' })));
+      const restored = new Set(rows.filter((_, index) => results[index].status === 'fulfilled').map(row => row.id));
+      if (rows.some(row => !row.editRemote)) await listSongs().then(setSongs).catch(() => {});
+      if (restored.size) await animate(restored).catch(() => {});
+      setSelectedArchive(current => current.filter(id => !restored.has(id)));
+      if (restored.size) setRestoreNotice(`Restored ${restored.size} ${restored.size === 1 ? 'song' : 'songs'} to My songs.`);
+      const failures = results.filter(result => result.status === 'rejected');
+      if (failures.length) {
+        const first = failures[0].reason;
+        const reason = first instanceof Error ? first.message : cloudMessage(first);
+        setActionError(`Could not restore ${failures.length} ${failures.length === 1 ? 'song' : 'songs'}. ${reason}`);
+      }
+    } finally {
+      setArchiveSnapshot(undefined);
+      restoringArchive.current = false;
+      setBusy('');
     }
   }
   useLayoutEffect(() => {
@@ -167,11 +248,11 @@ export default function SongsPage() {
           <time dateTime={new Date(row.updatedAt).toISOString()}>{dateFormat.format(row.updatedAt)}</time>
         </span>
       </span>
-      {!isArchived && <span className="song-open" aria-hidden="true">{isOpening ? local ? 'Opening…' : 'Downloading…' : <SelectIcon size={17} />}</span>}
+      <span className="song-open" aria-hidden="true">{isOpening ? local ? 'Opening…' : 'Downloading…' : <SelectIcon size={17} />}</span>
     </>;
     return <li key={row.id} className="song-row">
       <div className="song-select-row">
-        {isArchived ? <div className="song-card archived-song">{body}</div> : remoteId ? (
+        {remoteId ? (
           <button className="song-card" aria-label={`Open ${row.title}`} aria-describedby={`song-details-${row.id} song-status-${row.id}`} aria-disabled={!!busy || (!local && !cloud.online)} aria-busy={isOpening} onClick={() => {
             if (cloud.online || local) void openSong(row.id, remoteId, row.artwork, true);
           }}>{body}</button>
@@ -182,7 +263,7 @@ export default function SongsPage() {
         <div className="song-row-action">
           {selecting && canBackUp(row) ? <label className="song-select"><input type="checkbox" aria-label={`Back up ${row.title}`} checked={selected.includes(row.id)} disabled={!!busy}
             onChange={event => setSelected(current => event.target.checked ? [...current, row.id] : current.filter(id => id !== row.id))} /></label>
-          : <LibraryActions kind="song" title={row.title} archived={isArchived} disabled={!!busy || (row.editRemote && !cloud.online)}
+          : <LibraryActions kind="song" title={row.title} disabled={!!busy || !canManage(row)}
             onAction={action => manageSong(row, action)} onError={setActionError} onBackup={canBackUp(row) ? () => backUpSongs([row.id]) : undefined} />}
         </div>
       </div>
@@ -196,12 +277,49 @@ export default function SongsPage() {
     <main className="songs-page">
       <div className="songs-heading"><h1>My songs</h1></div>
       <CloudAccount />
-      {hasArchived && <div className="library-tabs" role="group" aria-label="Song collection">
-        <button aria-pressed={!isArchived} disabled={!!busy} onClick={() => { setView('active'); setActionError(''); }}><Library size={14} aria-hidden="true" />Songs</button>
-        <button aria-pressed={isArchived} disabled={!!busy} onClick={() => { setView('archived'); setSelected([]); setSelecting(false); setActionError(''); }}><Archive size={14} aria-hidden="true" />Archive</button>
+      {hasArchived && <div className="song-collection-switcher">
+        <div className="library-tabs" role="group" aria-label="Song collection">
+          <button ref={songsTab} aria-pressed={!isArchived} disabled={!!busy} onClick={() => { setRestoreNotice(''); setArchiveView(false); }}><Library size={14} aria-hidden="true" />Songs</button>
+          <button aria-pressed={isArchived} disabled={!!busy} onClick={() => { setRestoreNotice(''); setArchiveView(true); }}><Archive size={14} aria-hidden="true" />Archive</button>
+        </div>
       </div>}
+      <p className="archive-notice" role="status">{restoreNotice}</p>
       {actionError && <p className="cloud-error song-library-error" role="alert">{actionError}</p>}
-      {loading ? <p role="status">Opening your collection…</p> : error ? <div className="songs-empty"><p role="alert">{error}</p><button className="button button-secondary" onClick={() => window.location.reload()}>Try again</button></div> : !rows.length ? (
+      {loading ? <p role="status">Opening your collection…</p> : error ? <div className="songs-empty"><p role="alert">{error}</p><button className="button button-secondary" onClick={() => window.location.reload()}>Try again</button></div> : isArchived && hasArchived ? (
+        <ArchiveCrate
+          songs={archiveRows.map(row => {
+            const backedUp = hasCloudCopy(row);
+            const backupStatus = row.local ? cloud.status(row.id, row.local.revision) : '';
+            return { ...row, backedUp, canManage: canManage(row),
+              backupStatus: backupStatus || (backedUp ? row.local ? 'Backed up' : 'Cloud only' : 'Local only'),
+              backupError: row.local ? cloud.errors[row.id] : undefined,
+            };
+          })}
+          selected={selectedArchiveRows.map(row => row.id)}
+          restoring={busy === 'restore'}
+          onSelect={id => {
+            setRestoreNotice('');
+            setSelectedArchive(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+          }}
+          onClear={() => setSelectedArchive([])}
+          restoreTarget={songsTab}
+          onRestore={animate => void restoreArchiveSongs(selectedArchiveRows, animate)}
+          onRetry={cloud.retry}
+          renderActions={(id, animate) => {
+            const row = archiveRows.find(item => item.id === id);
+            return row && <LibraryActions key={row.id} kind="song" title={row.title} archived disabled={!!busy || !canManage(row)}
+              onAction={action => action.type === 'restore' ? restoreArchiveSongs([row], animate) : manageSong(row, action)}
+              onError={setActionError} />;
+          }}
+        />
+      ) : isArchived ? (
+        <section className="archive-room" aria-labelledby="archive-title">
+          <header className="archive-header">
+            <h2 id="archive-title">Archive</h2>
+            <button className="library-dialog-button" onClick={() => setArchiveView(false, true)}>Back to songs</button>
+          </header>
+        </section>
+      ) : !rows.length ? (
         <div className="songs-empty"><div className="song-sleeve" aria-hidden="true"><RecordSleeve title="Your next idea" /></div><h2>No songs yet</h2><a className="button button-primary" href="/studio">Start a song</a></div>
       ) : groups.filter(group => group.rows.length).map(group => <section key={group.key} className="song-group" data-storage={group.key} aria-labelledby={`songs-${group.key}`}>
         <div className="song-group-header">

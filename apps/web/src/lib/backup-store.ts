@@ -11,6 +11,7 @@ export interface BackupLink {
   remoteLibraryRevision?: number;
   syncedLocalRevision: number;
   recovered?: boolean;
+  creationDateKnown?: boolean;
   libraryEdit?: { baseRevision: number; revision: number; patch: LibraryPatch };
   attempt?: { commitId: string; localRevision: number };
 }
