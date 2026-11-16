@@ -80,6 +80,8 @@ function SongsCollection() {
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedArchive, setSelectedArchive] = useState<string[]>([]);
   const [restoreNotice, setRestoreNotice] = useState('');
+  const [archiveSnapshot, setArchiveSnapshot] = useState<SongRow[]>();
+  const songsTab = useRef<HTMLButtonElement>(null);
   const restoringArchive = useRef(false);
   const hadArchived = useRef(false);
   const [busy, setBusy] = useState('');
@@ -127,7 +129,7 @@ function SongsCollection() {
   });
   const remoteRows = cloud.remoteSongs.filter(song => !cloud.links.some(link => link.ownerId === cloud.user?.id && link.remoteId === song.id && visible.some(local => local.id === link.id))).map(song => cloudRow(song));
   const catalogue = [...localRows, ...remoteRows];
-  const archiveRows = catalogue.filter(row => lifecycle(row) === 'archived').sort((a, b) => b.updatedAt - a.updatedAt);
+  const archiveRows = archiveSnapshot ?? catalogue.filter(row => lifecycle(row) === 'archived').sort((a, b) => b.updatedAt - a.updatedAt);
   const hasArchived = archiveRows.length > 0;
   const rows = catalogue.filter(row => lifecycle(row) === 'active')
     .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -172,15 +174,18 @@ function SongsCollection() {
       if (!row.editRemote) await listSongs().then(setSongs).catch(() => {});
     }
   }
-  async function restoreArchiveSongs() {
-    if (busy || restoringArchive.current || !selectedArchiveRows.length || selectedArchiveRows.some(row => !canManage(row))) return;
+  async function restoreArchiveSongs(rows: SongRow[], animate: (restored: Set<string>) => Promise<void>) {
+    if (busy || restoringArchive.current || !rows.length || rows.some(row => !canManage(row))) return;
     restoringArchive.current = true;
     setBusy('restore');
+    setArchiveSnapshot(archiveRows);
     setActionError('');
     setRestoreNotice('');
     try {
-      const results = await Promise.allSettled(selectedArchiveRows.map(row => applySongAction(row, { type: 'restore' })));
-      const restored = new Set(selectedArchiveRows.filter((_, index) => results[index].status === 'fulfilled').map(row => row.id));
+      const results = await Promise.allSettled(rows.map(row => applySongAction(row, { type: 'restore' })));
+      const restored = new Set(rows.filter((_, index) => results[index].status === 'fulfilled').map(row => row.id));
+      if (rows.some(row => !row.editRemote)) await listSongs().then(setSongs).catch(() => {});
+      if (restored.size) await animate(restored).catch(() => {});
       setSelectedArchive(current => current.filter(id => !restored.has(id)));
       if (restored.size) setRestoreNotice(`Restored ${restored.size} ${restored.size === 1 ? 'song' : 'songs'} to My songs.`);
       const failures = results.filter(result => result.status === 'rejected');
@@ -189,8 +194,8 @@ function SongsCollection() {
         const reason = first instanceof Error ? first.message : cloudMessage(first);
         setActionError(`Could not restore ${failures.length} ${failures.length === 1 ? 'song' : 'songs'}. ${reason}`);
       }
-      if (selectedArchiveRows.some(row => !row.editRemote)) await listSongs().then(setSongs).catch(() => {});
     } finally {
+      setArchiveSnapshot(undefined);
       restoringArchive.current = false;
       setBusy('');
     }
@@ -269,9 +274,11 @@ function SongsCollection() {
     <main className="songs-page">
       <div className="songs-heading"><h1>My songs</h1></div>
       <CloudAccount />
-      {hasArchived && <div className="library-tabs" role="group" aria-label="Song collection">
-        <button aria-pressed={!isArchived} disabled={!!busy} onClick={() => { setRestoreNotice(''); setArchiveView(false); }}><Library size={14} aria-hidden="true" />Songs</button>
-        <button aria-pressed={isArchived} disabled={!!busy} onClick={() => { setRestoreNotice(''); setArchiveView(true); }}><Archive size={14} aria-hidden="true" />Archive</button>
+      {hasArchived && <div className="song-collection-switcher">
+        <div className="library-tabs" role="group" aria-label="Song collection">
+          <button ref={songsTab} aria-pressed={!isArchived} disabled={!!busy} onClick={() => { setRestoreNotice(''); setArchiveView(false); }}><Library size={14} aria-hidden="true" />Songs</button>
+          <button aria-pressed={isArchived} disabled={!!busy} onClick={() => { setRestoreNotice(''); setArchiveView(true); }}><Archive size={14} aria-hidden="true" />Archive</button>
+        </div>
       </div>}
       <p className="archive-notice" role="status">{restoreNotice}</p>
       {actionError && <p className="cloud-error song-library-error" role="alert">{actionError}</p>}
@@ -292,12 +299,14 @@ function SongsCollection() {
             setSelectedArchive(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
           }}
           onClear={() => setSelectedArchive([])}
-          onRestore={() => void restoreArchiveSongs()}
+          restoreTarget={songsTab}
+          onRestore={animate => void restoreArchiveSongs(selectedArchiveRows, animate)}
           onRetry={cloud.retry}
-          renderActions={id => {
+          renderActions={(id, animate) => {
             const row = archiveRows.find(item => item.id === id);
             return row && <LibraryActions key={row.id} kind="song" title={row.title} archived disabled={!!busy || !canManage(row)}
-              onAction={action => manageSong(row, action)} onError={setActionError} />;
+              onAction={action => action.type === 'restore' ? restoreArchiveSongs([row], animate) : manageSong(row, action)}
+              onError={setActionError} />;
           }}
         />
       ) : isArchived ? (
