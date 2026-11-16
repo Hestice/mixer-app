@@ -323,10 +323,12 @@ export function useStudio(startInWorkspace = false) {
 
   async function toggleLayer(id: string) {
     if (locked || busy) return;
-    const next = savedLayers.map((layer) => layer.id === id ? { ...layer, enabled: !layer.enabled } : layer);
-    setSoloId(null); setLayers(next);
-    // An explicit enable action should be audible even if the song was paused.
-    if (!workspace && !playing && next.find((layer) => layer.id === id)?.enabled) {
+    const layer = layers.find(item => item.id === id);
+    if (!layer) return;
+    setLayers(current => current.map(item => item.id === id ? { ...item, enabled: !item.enabled } : item));
+    if (!workspace || (soloId === id && layer.enabled)) setSoloId(null);
+    // In the listening demo, enabling a layer starts playback.
+    if (!workspace && !playing && !layer.enabled) {
       setBusy(true); setError('');
       try {
         await prepareAudio();
@@ -456,15 +458,14 @@ export function useStudio(startInWorkspace = false) {
     } else void enableMicrophone(inputDevice, layer);
   }
 
-  async function auditionLayer(layer: Layer, alone: boolean) {
+  async function playKeptMix() {
     if (locked || busy) return;
     setBusy(true); setError(''); stopMetronome();
     try {
       await prepareAudio(false);
-      const review = layers.map((item) => ({ ...item, enabled: alone ? item.id === layer.id : item.enabled }));
-      setSoloId(alone ? layer.id : null); setPreviewCandidate(false);
+      setSoloId(null); setPreviewCandidate(false);
       getEngine().configureSession(layers, getEngine().position);
-      await getEngine().play(review, true, getEngine().position);
+      await getEngine().play(layers, true, getEngine().position);
       getEngine().volume(volume); setPlaying(true);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
@@ -717,7 +718,7 @@ export function useStudio(startInWorkspace = false) {
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
     togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
-    beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
+    beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, playKeptMix,
     enableMicrophone, record, stopRecording, cancelCountIn, returnToTake, disconnectMicrophone, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, devices, inputDevice, previewMetronome,
     microphoneConnected: microphoneLabel !== null,

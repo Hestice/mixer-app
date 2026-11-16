@@ -2,43 +2,18 @@
 
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Studio } from '../hooks/use-studio';
-import { timeLabel, type Layer } from '../lib/session';
+import { timeLabel } from '../lib/session';
 import { Mic, Play, Pause, Square, Plus, Download, RotateCcw, Headphones, Check, X } from './icons';
-import { ClipEditor, TakePicker } from './clip-editor';
+import { TakePicker } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
 import { Waveform } from './waveform';
 import { useRecordNavigation } from './record-transition';
 import { StudioTurntable } from './studio-turntable';
 import { RecordCustomizer } from './record-customizer';
 import { Archive, ArrowLeft, ChevronDown } from 'lucide-react';
-import { LibraryActions } from './library-actions';
+import { LayerActions } from './studio-layer';
 import { SongTimeline, preciseTime } from './song-timeline';
 import '../app/studio.css';
-
-function LayerActions({ layer, studio, archived }: { layer: Layer; studio: Studio; archived?: boolean }) {
-  return <LibraryActions kind="layer" title={layer.name} archived={archived}
-    disabled={studio.locked || studio.busy || studio.retakeLayerId === layer.id}
-    onAction={action => action.type === 'rename' ? studio.renameLayer(layer.id, action.title) : studio.manageLayer(layer.id, action.type)}
-    onError={studio.setError} />;
-}
-
-function Track({ layer, studio, span }: { layer: Layer; studio: Studio; span: number }) {
-  const duration = clipBounds(layer).length;
-  const audible = studio.soloId ? studio.soloId === layer.id : layer.enabled;
-  return <article className={`studio-track ${audible ? '' : 'is-muted'}`} aria-label={`${layer.name} layer`}>
-    <div className="studio-track-head"><span className={`layer-color ${layer.kind}-color`} /><h3>{layer.name}</h3><time>{timeLabel(duration)}</time><LayerActions layer={layer} studio={studio} /></div>
-    <TakePicker layer={layer} studio={studio} />
-    <ClipEditor layer={layer} studio={studio} span={span} detailsOnly />
-    <div className="studio-track-controls">
-      <button aria-pressed={!layer.enabled} disabled={studio.locked || studio.busy} onClick={() => void studio.toggleLayer(layer.id)}>{layer.enabled ? 'Mute' : 'Unmute'}</button>
-      <button aria-pressed={studio.soloId === layer.id} disabled={studio.locked || studio.busy} onClick={() => studio.soloId === layer.id ? studio.setSoloId(null) : void studio.auditionLayer(layer, true)}>{studio.soloId === layer.id ? 'Hear all' : 'Hear alone'}</button>
-      <label>Volume<input aria-label={`${layer.name} volume`} type="range" min="0" max="1" step=".01" disabled={studio.locked} value={layer.volume} onChange={(event) => studio.setLayerVolume(layer.id, Number(event.target.value))} /></label>
-      <button disabled={studio.locked || studio.busy} onClick={() => void studio.auditionLayer(layer, false)}>Listen from cursor</button>
-      {layer.recorded && <button disabled={studio.locked || studio.busy || !!studio.candidate} onClick={() => studio.recordAnother(layer.id)}>Record another take</button>}
-      {layer.recorded && <button className="studio-download" onClick={() => studio.download(layer)} aria-label={`Download ${layer.name} original WAV`}><Download size={14} /><span>Original WAV</span></button>}
-    </div>
-  </article>;
-}
 
 const narrowStudioQuery = '(max-width: 760px)';
 const readNarrowStudio = () => window.matchMedia(narrowStudioQuery).matches;
@@ -104,6 +79,13 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
     target?.scrollIntoView({ block: 'nearest' });
   }
 
+  function retakeLayer(id: string) {
+    setCaptureOptions(true);
+    setNotice('');
+    studio.recordAnother(id);
+    revealRecording();
+  }
+
   function addLayer() {
     revealRecording();
     if (state === 'idle') capture();
@@ -140,8 +122,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
         {studio.saveError && <div className="studio-save-error" role="alert"><p>{studio.saveError}</p><button className="text-button" onClick={() => void studio.retrySave()}>Retry save</button></div>}
         {studio.cloudStatus && <div className="studio-cloud-status" role="status"><span>{studio.cloudStatus}</span>{studio.cloudError && <><p>{studio.cloudError}</p><button className="text-button" onClick={studio.retryCloud}>Retry backup</button></>}</div>}
         <div className="studio-body">
-          <SongTimeline studio={studio} span={span}>
-            <div className="studio-tracks">{studio.layers.map((layer) => <Track key={layer.id} layer={layer} studio={studio} span={span} />)}</div>
+          <SongTimeline studio={studio} span={span} onRetake={retakeLayer}>
             {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={state !== 'idle' || studio.busy} onClick={addLayer}><Mic size={17} />Record your first layer</button></div>}
             {!!studio.archivedLayers.length && <details className="layer-archive">
               <summary><Archive size={14} aria-hidden="true" /> Archived layers <span>{studio.archivedLayers.length}</span></summary>
