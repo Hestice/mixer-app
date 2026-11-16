@@ -1,3 +1,4 @@
+import { storeRecordingContent } from './recording-storage';
 import { openDatabase, readLocal, songChanged, summarizeSong, type SavedSong } from './song-store';
 
 export interface BackupLink {
@@ -72,6 +73,7 @@ export async function updateBackup(id: string, update: (current: BackupLink) => 
 // A downloaded song and its synchronization checkpoint become visible together.
 // Compare the local revision again after downloading: another tab may have edited it.
 export async function installCloudSong(song: SavedSong, link: BackupLink, expectedRevision: number) {
+  const stored = await storeRecordingContent(song);
   const db = await openDatabase();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(['songs', 'summaries', 'backups'], 'readwrite');
@@ -82,7 +84,7 @@ export async function installCloudSong(song: SavedSong, link: BackupLink, expect
       if ((previous?.revision ?? 0) !== expectedRevision || previous && previous.ownerId !== link.ownerId) {
         failure = new Error('This song changed locally while downloading. Open it again to keep your latest edits.'); tx.abort(); return;
       }
-      tx.objectStore('songs').put(song);
+      tx.objectStore('songs').put(stored);
       tx.objectStore('summaries').put(summarizeSong(song));
       tx.objectStore('backups').put(link);
     };

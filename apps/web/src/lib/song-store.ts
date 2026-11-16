@@ -1,3 +1,4 @@
+import { storeRecordingContent, restoreRecordingContent, RecordingReadError, type StoredSong } from './recording-storage';
 import type { RecordArt } from './record-art';
 import { clipBounds } from './clip-edits';
 import type { Layer } from './session';
@@ -41,7 +42,7 @@ export class SongConflictError extends Error {
 }
 
 export function storageMessage(reason: unknown) {
-  if (reason instanceof SongConflictError) return reason.message;
+  if (reason instanceof SongConflictError || reason instanceof RecordingReadError) return reason.message;
   if (reason instanceof Error && reason.name === 'QuotaExceededError') return 'This device is out of storage. Download your takes before leaving, free up space, then retry saving.';
   return 'Could not save on this device. Keep this tab open and download your takes, or retry saving.';
 }
@@ -49,7 +50,7 @@ export function storageMessage(reason: unknown) {
 export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let blocked = false;
-    const request = indexedDB.open('listening-room', 2);
+    const request = indexedDB.open('listening-room', 3);
     request.onupgradeneeded = () => {
       for (const name of ['songs', 'summaries', 'backups', 'settings']) {
         if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name, { keyPath: 'id' });
@@ -76,7 +77,10 @@ export async function readLocal<T>(store: string, key?: string): Promise<T> {
   });
 }
 
-export const getSong = (id: string) => readLocal<SavedSong | undefined>('songs', id);
+export async function getSong(id: string) {
+  const song = await readLocal<StoredSong | undefined>('songs', id);
+  return song ? restoreRecordingContent(song) : undefined;
+}
 export async function listSongs() {
   return (await readLocal<SongSummary[]>('summaries')).sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -84,6 +88,7 @@ export async function listSongs() {
 // Audio, review state and the library entry commit together. A successful put alone
 // is not enough: the UI must wait for the transaction's complete event.
 export async function saveSong(id: string, revision: number, content: SongContent, creationOwner?: string): Promise<SavedSong> {
+  const stored = await storeRecordingContent(content);
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(['songs', 'summaries'], 'readwrite');
@@ -99,7 +104,7 @@ export async function saveSong(id: string, revision: number, content: SongConten
       try {
         const now = Date.now();
         saved = { ...content, ownerId: previous ? previous.ownerId : creationOwner, id, revision: revision + 1, createdAt: previous?.createdAt ?? now, updatedAt: now };
-        store.put(saved);
+        store.put({ ...saved, layers: stored.layers, candidate: stored.candidate });
         const summary = summarizeSong(saved);
         transaction.objectStore('summaries').put(summary);
       } catch (reason) { failure = reason; transaction.abort(); }

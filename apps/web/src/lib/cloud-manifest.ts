@@ -112,3 +112,12 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
     withDemo: manifest.withDemo, volume: manifest.volume, partName: manifest.partName,
     tempo: manifest.tempo, countIn: manifest.countIn, metronomeMode: manifest.metronomeMode };
 }
+
+/** Restore matching immutable recordings while keeping newer local edits and takes. */
+export async function recoverLayerAudio(layer: Layer, manifest: CloudManifest, ownerId: string, download: (path: string) => Promise<Blob>) {
+  const reference = [...manifest.layers, ...(manifest.candidate ? [manifest.candidate] : [])].find(item => item.id === layer.id && item.recorded);
+  if (!reference) return new Map<string, Blob>();
+  const restored = await downloadManifest({ ...manifest, layers: [reference], candidate: null, retakeLayerId: undefined }, ownerId, download);
+  const available = new Map(takesOf(restored.layers[0]).filter(take => take.blob).map(take => [take.id, take.blob!]));
+  return new Map(takesOf(layer).filter(take => available.has(take.id)).map(take => [take.id, available.get(take.id)!]));
+}

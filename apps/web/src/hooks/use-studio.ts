@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { appendTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
 import type { ClipEdits } from '../lib/session';
+import { RecordingReadError, readRecording, replaceLayerAudio } from '../lib/recording-storage';
 import type { RecordArt } from '../lib/record-art';
 import { OUTPUT_DELAY } from '../lib/audio-output';
 import { recordingDelay, recordedPlacement } from '../lib/recording-timing';
@@ -180,14 +181,39 @@ export function useStudio(startInWorkspace = false) {
   }
 
   async function prepareAudio(includeCandidate = previewCandidate) {
+    const run = runRef.current;
     const engine = getEngine();
     if (!workspace || withDemo) await engine.loadDemo();
-    for (const layer of [...(candidate && includeCandidate ? backingLayers : layers), ...(candidate && includeCandidate ? [candidate] : [])]) {
-      if (layer.recorded && layer.blob && decodedRecordings.current.get(layer.id) !== (layer.takeId ?? layer.id)) {
-        await engine.addRecording(layer.id, layer.blob);
+    const prepared = [...(candidate && includeCandidate ? backingLayers : layers), ...(candidate && includeCandidate ? [candidate] : [])];
+    for (const layer of prepared) {
+      if (layer.recorded && decodedRecordings.current.get(layer.id) !== (layer.takeId ?? layer.id)) {
+        try { await engine.addRecording(layer.id, layer.blob, layer.name); }
+        catch (reason) {
+          if (!(reason instanceof RecordingReadError)) throw reason;
+          const selectedId = layer.takeId ?? layer.id;
+          const replacements = new Map<string, Blob>();
+          // A fresh database read can refresh a stale browser Blob handle.
+          const fresh = await getSong(songId).catch(() => undefined);
+          const freshLayer = [...(fresh?.layers ?? []), ...(fresh?.candidate ? [fresh.candidate] : [])].find(item => item.id === layer.id);
+          const freshTake = freshLayer && takesOf(freshLayer).find(take => take.id === selectedId);
+          if (freshTake?.blob) {
+            try { replacements.set(selectedId, new Blob([await readRecording(freshTake.blob, layer.name)], { type: freshTake.blob.type })); } catch {}
+          }
+          if (!replacements.has(selectedId)) {
+            try { for (const [id, blob] of await cloud.recoverRecordings(songId, layer)) replacements.set(id, blob); } catch {}
+          }
+          if (!replacements.has(selectedId) || disposed.current || run !== runRef.current || accountBlocked) throw reason;
+          const recovered = replaceLayerAudio(layer, replacements);
+          prepared[prepared.indexOf(layer)] = recovered;
+          await engine.addRecording(layer.id, recovered.blob, layer.name);
+          setLayers(current => current.map(item => item.id === layer.id ? replaceLayerAudio(item, replacements) : item));
+          setCandidate(current => current?.id === layer.id ? replaceLayerAudio(current, replacements) : current);
+        }
         decodedRecordings.current.set(layer.id, layer.takeId ?? layer.id);
       }
     }
+    if (disposed.current || run !== runRef.current) throw new Error('Playback was canceled. Try again.');
+    return prepared;
   }
 
   useEffect(() => {
@@ -559,7 +585,8 @@ export function useStudio(startInWorkspace = false) {
     exporting.current = true; setExportBusy(true); setBusy(true); setError(''); setExportStatus('Preparing audio…');
     const filename = songFilename(title);
     try {
-      const blob = await exportSong(layers, volume, (stage) => { if (!disposed.current) setExportStatus(stage); });
+      const prepared = await prepareAudio(false);
+      const blob = await exportSong(prepared, volume, (stage) => { if (!disposed.current) setExportStatus(stage); });
       if (disposed.current) return;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');

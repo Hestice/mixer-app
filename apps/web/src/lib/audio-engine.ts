@@ -1,3 +1,4 @@
+import { readRecording } from './recording-storage';
 import { createSongOutput } from './audio-output';
 import { clipBounds, playbackWindow } from './clip-edits';
 import { extractPeaks, type Layer } from './session';
@@ -37,9 +38,12 @@ export class AudioEngine {
     await this.loading;
   }
 
-  async addRecording(id: string, blob: Blob) {
+  async addRecording(id: string, blob: Blob | undefined, name = id) {
     const context = await this.ready();
-    const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+    const data = await readRecording(blob, name);
+    let buffer: AudioBuffer;
+    try { buffer = await context.decodeAudioData(data); }
+    catch (cause) { throw new Error(`The audio in “${name}” could not be decoded. Try restoring that take from your cloud backup.`, { cause }); }
     this.buffers.set(id, buffer);
     return buffer.duration;
   }
