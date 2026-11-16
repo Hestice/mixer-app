@@ -1,4 +1,4 @@
-import { storeRecordingContent, restoreRecordingContent, RecordingReadError, type StoredSong } from './recording-storage';
+import { storeRecordingContent, restoreRecordingContent, hasLegacyRecordings, RecordingReadError, type StoredSong } from './recording-storage';
 import type { RecordArt } from './record-art';
 import { clipBounds } from './clip-edits';
 import type { Layer } from './session';
@@ -81,6 +81,44 @@ export async function getSong(id: string) {
   const song = await readLocal<StoredSong | undefined>('songs', id);
   return song ? restoreRecordingContent(song) : undefined;
 }
+/** Protect old recordings before waveform decoding or any further edits. This is a storage change, not a song revision. */
+export async function openLocalSong(id: string, ownerId?: string): Promise<{ song?: SavedSong; audioError?: RecordingReadError; protectionError?: unknown; ownerMismatch?: boolean }> {
+  for (;;) {
+    const raw = await readLocal<StoredSong | undefined>('songs', id);
+    if (!raw) return {};
+    if (raw.ownerId && raw.ownerId !== ownerId) return { ownerMismatch: true };
+    const song = restoreRecordingContent(raw);
+    if (!hasLegacyRecordings(raw)) return { song };
+    let protectedSong: StoredSong;
+    try { protectedSong = await storeRecordingContent(song); }
+    catch (reason) { if (reason instanceof RecordingReadError) return { song, audioError: reason }; throw reason; }
+    const protectedCopy = restoreRecordingContent(protectedSong);
+    try {
+      const db = await openDatabase();
+      const promoted = await new Promise<boolean>((resolve, reject) => {
+        const tx = db.transaction('songs', 'readwrite');
+        const store = tx.objectStore('songs');
+        const request = store.get(id);
+        let unchanged = false;
+        let failure: unknown;
+        request.onsuccess = () => {
+          const current = request.result as StoredSong | undefined;
+          unchanged = !!current && current.revision === raw.revision && current.ownerId === raw.ownerId;
+          try { if (unchanged && current && hasLegacyRecordings(current)) store.put(protectedSong); }
+          catch (reason) { failure = reason; tx.abort(); }
+        };
+        tx.oncomplete = () => { db.close(); resolve(unchanged); };
+        tx.onabort = () => { db.close(); reject(failure ?? tx.error); };
+      });
+      if (promoted) return { song: protectedCopy };
+    } catch (reason) {
+      // Keep a playable copy in this tab even if the device has no room for the migration.
+      return { song: protectedCopy, protectionError: reason };
+    }
+    // Another tab wrote a new revision while we copied the samples. Use that revision.
+  }
+}
+
 export async function listSongs() {
   return (await readLocal<SongSummary[]>('summaries')).sort((a, b) => b.updatedAt - a.updatedAt);
 }

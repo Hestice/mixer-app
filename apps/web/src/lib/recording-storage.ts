@@ -13,31 +13,77 @@ export class RecordingReadError extends Error {
     this.name = 'RecordingReadError';
   }
 }
+async function savedBytes(blob: Blob, name: string) {
+  let pending = bytes.get(blob);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const data = await blob.arrayBuffer();
+        if (!data.byteLength) throw new Error('Empty recording');
+        return data;
+      } catch (reason) { throw new RecordingReadError(name, reason); }
+    })().catch(reason => { bytes.delete(blob); throw reason; });
+    bytes.set(blob, pending);
+  }
+  return pending;
+}
+
 export async function readRecording(blob: Blob | undefined, name: string) {
   if (!blob) throw new RecordingReadError(name);
-  try { const data = await blob.arrayBuffer(); if (!data.byteLength) throw new Error('Empty recording'); return data; }
-  catch (reason) { throw new RecordingReadError(name, reason); }
+  // decodeAudioData can detach its input. Keep the saved bytes reusable.
+  return (await savedBytes(blob, name)).slice(0);
+}
+
+export function recordingBlob(data: ArrayBuffer, type = 'audio/wav') {
+  if (!data.byteLength) throw new Error('Empty recording');
+  const blob = new Blob([data], { type });
+  bytes.set(blob, Promise.resolve(data));
+  return blob;
+}
+
+export function recordingCopies(layer: Layer, takeId: string) {
+  const primary = (layer.takeId ?? layer.id) === takeId ? layer.blob : undefined;
+  const alternate = layer.takes?.find(take => take.id === takeId)?.blob;
+  return [...new Set([primary, alternate])].filter((blob): blob is Blob => !!blob);
+}
+
+async function storeAudio(copies: Blob[], name: string) {
+  let failure = new RecordingReadError(name);
+  for (const blob of copies) {
+    try { return { audioBytes: await savedBytes(blob, name), audioType: blob.type || 'audio/wav' }; }
+    catch (reason) { if (reason instanceof RecordingReadError) failure = reason; else throw reason; }
+  }
+  throw failure;
 }
 
 /** IndexedDB stores the bytes, not references to browser-managed Blob files. */
 export async function storeRecordingContent<T extends SongContent>(song: T) {
-  async function audio<TAudio extends { blob?: Blob }>(value: TAudio, name: string) {
-    const { blob, ...rest } = value;
-    if (!blob) return rest;
-    let loaded = bytes.get(blob);
-    if (!loaded) { loaded = readRecording(blob, name).catch(reason => { bytes.delete(blob); throw reason; }); bytes.set(blob, loaded); }
-    return { ...rest, audioBytes: await loaded, audioType: blob.type || 'audio/wav' };
-  }
   async function layer(value: Layer): Promise<StoredLayer> {
-    const { takes, ...rest } = value;
-    return { ...await audio(rest, value.name), ...(takes ? { takes: await Promise.all(takes.map(take=>audio(take,value.name))) } : {}) };
+    const { takes, blob, ...rest } = value;
+    const selected = value.takeId ?? value.id;
+    const audio = value.recorded || blob ? await storeAudio(recordingCopies(value, selected), value.name) : {};
+    const alternatives = takes ? await Promise.all(takes.map(async ({ blob: takeBlob, ...take }): Promise<StoredTake> => ({
+      ...take,
+      ...(take.id === selected ? audio : await storeAudio(takeBlob ? [takeBlob] : [], value.name)),
+    }))) : undefined;
+    return { ...rest, ...audio, ...(alternatives ? { takes: alternatives } : {}) };
   }
   return { ...song, layers: await Promise.all(song.layers.map(layer)), candidate: song.candidate ? await layer(song.candidate) : null };
 }
+
+export function hasLegacyRecordings(song: StoredSong) {
+  return [...song.layers, ...(song.candidate ? [song.candidate] : [])].some(layer =>
+    ((layer.recorded || layer.blob) && !layer.audioBytes?.byteLength) || layer.takes?.some(take => !take.audioBytes?.byteLength));
+}
+
 export function restoreRecordingContent(song: StoredSong): SavedSong {
+  const restored = new WeakMap<ArrayBuffer, Blob>();
   function audio<T extends StoredAudio>(value: T) {
     const { audioBytes, audioType, ...rest } = value;
-    return { ...rest, ...(audioBytes ? { blob: new Blob([audioBytes], { type: audioType || 'audio/wav' }) } : {}) };
+    if (!audioBytes?.byteLength) return rest;
+    let blob = restored.get(audioBytes);
+    if (!blob) { blob = recordingBlob(audioBytes, audioType); restored.set(audioBytes, blob); }
+    return { ...rest, blob };
   }
   function layer(value: StoredLayer): Layer {
     const { takes, ...rest } = value;

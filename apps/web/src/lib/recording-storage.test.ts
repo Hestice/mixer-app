@@ -1,10 +1,11 @@
 import 'fake-indexeddb/auto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readRecording, RecordingReadError, storeRecordingContent, restoreRecordingContent, replaceLayerAudio } from './recording-storage';
-import { saveSong, getSong, readLocal, type SongContent } from './song-store';
+import { readRecording, recordingBlob, RecordingReadError, storeRecordingContent, restoreRecordingContent, replaceLayerAudio } from './recording-storage';
+import { saveSong, getSong, readLocal, openDatabase, openLocalSong, type SongContent } from './song-store';
 import { encodeWav } from './wav';
 import { makeManifest, recoverLayerAudio } from './cloud-manifest';
+import { enableBackup, getBackup } from './backup-store';
 import { takesOf } from './clip-edits';
 
 function fixture(): SongContent {
@@ -27,14 +28,14 @@ test('a lost browser Blob backing file cannot invalidate previously persisted by
  const content=fixture();const source=content.layers[0].blob!;
  const stored=await storeRecordingContent({...content,id:crypto.randomUUID(),revision:1,createdAt:1,updatedAt:1});
  Object.defineProperty(source,'arrayBuffer',{value:async()=>{throw new DOMException('The object can not be found here.','NotFoundError');}});
- await assert.rejects(readRecording(source,'Vocals'),RecordingReadError);
+ assert.equal((await readRecording(source,'Vocals')).byteLength,52,'an open tab retains the bytes it already saved');
  const restored=restoreRecordingContent(stored);
  assert.ok((await readRecording(restored.layers[0].blob,'Vocals')).byteLength>44);
 });
 test('an unreadable legacy recording cannot overwrite a previously saved song',async()=>{
  const id=crypto.randomUUID();const content=fixture();await saveSong(id,0,content);
  const broken=new Blob(['unreadable']);Object.defineProperty(broken,'arrayBuffer',{value:async()=>{throw new DOMException('The object can not be found here.','NotFoundError');}});
- await assert.rejects(saveSong(id,1,{...content,layers:[{...content.layers[0],blob:broken}]}), /Vocals.*NotFoundError/);
+ await assert.rejects(saveSong(id,1,{...content,layers:[{...content.layers[0],blob:broken,takes:[{...content.layers[0].takes![0],blob:broken}]}]}), /Vocals.*NotFoundError/);
  assert.equal((await getSong(id))?.revision,1);
 });
 test('cloud repair restores only matching audio, preserving unsynced edits, alternatives and take selection',async()=>{
@@ -53,4 +54,80 @@ test('cloud repair restores only matching audio, preserving unsynced edits, alte
 test('older app code cannot open and overwrite the byte-backed database format',async()=>{
  const content=fixture();await saveSong(crypto.randomUUID(),0,content);
  await assert.rejects(new Promise((resolve,reject)=>{const request=indexedDB.open('listening-room',2);request.onerror=()=>reject(request.error);request.onsuccess=()=>{request.result.close();resolve(undefined);};}),{name:'VersionError'});
+});
+
+async function seedLegacy(content: SongContent, ownerId?: string) {
+  const id = crypto.randomUUID();
+  const db = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('songs', 'readwrite');
+      tx.objectStore('songs').put({ ...content, id, ownerId, revision: 7, updatedAt: 456, createdAt: 123 });
+      tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error);
+    });
+    return id;
+  } finally { db.close(); }
+}
+
+test('opening a legacy song protects audio immediately without changing its revision, trims or owner', async () => {
+  const content = fixture(), owner = crypto.randomUUID();
+  const id = await seedLegacy(content, owner);
+  assert.deepEqual(await openLocalSong(id, 'other-owner'), { ownerMismatch: true });
+  assert.ok((await readLocal<any>('songs',id)).layers[0].blob instanceof Blob);
+  const { song, audioError } = await openLocalSong(id, owner);
+  assert.equal(audioError, undefined);
+  assert.equal(song?.revision, 7); assert.equal(song?.updatedAt, 456); assert.equal(song?.ownerId, owner);
+  assert.equal(song?.layers[0].startAt, 4); assert.equal(song?.layers[0].trimStart, .2);
+  const raw = await readLocal<any>('songs', id);
+  assert.equal(raw.layers[0].blob, undefined);
+  assert.deepEqual(raw.layers[0].audioBytes, await content.layers[0].blob!.arrayBuffer());
+});
+
+test('a readable duplicate recovers the same take when the layer Blob is unavailable', async () => {
+  const content = fixture(), good = content.layers[0].blob!;
+  content.layers[0].blob = new Blob([]);
+  const id = await seedLegacy(content);
+  const { song, audioError } = await openLocalSong(id);
+  assert.equal(audioError, undefined);
+  assert.equal(song?.layers[0].takeId, 'take-a');
+  assert.deepEqual(await song?.layers[0].blob!.arrayBuffer(), await good.arrayBuffer());
+});
+
+test('opening or selecting an unreadable local recording for backup leaves the legacy record untouched', async () => {
+  const content = fixture();
+  const broken = new Blob([]);
+  content.layers[0].blob = broken; content.layers[0].takes![0].blob = broken;
+  const id = await seedLegacy(content);
+  const { song, audioError } = await openLocalSong(id);
+  assert.ok(audioError instanceof RecordingReadError);
+  assert.equal(song?.title, content.title); assert.equal(song?.layers[0].startAt, 4);
+  await assert.rejects(enableBackup(id, 'owner'), RecordingReadError);
+  const raw = await readLocal<any>('songs', id);
+  assert.equal(raw.revision, 7); assert.equal(raw.ownerId, undefined);
+  assert.ok(raw.layers[0].blob instanceof Blob); assert.equal(await getBackup(id), undefined);
+});
+
+test('capture bytes remain reusable even if a decoder transfers its input or the Blob cannot be read', async () => {
+  const original = new Uint8Array([82,73,70,70]).buffer;
+  const blob = recordingBlob(original);
+  Object.defineProperty(blob, 'arrayBuffer', { value: async () => { throw new DOMException('Missing file','NotFoundError'); } });
+  const decodeInput = await readRecording(blob, 'Guitar');
+  structuredClone(decodeInput, { transfer: [decodeInput] });
+  assert.equal(decodeInput.byteLength, 0);
+  assert.deepEqual(await readRecording(blob, 'Guitar'), original);
+});
+
+
+test('an out-of-space migration leaves the legacy row intact and can still open the readable audio', async () => {
+  const content = fixture(), id = await seedLegacy(content);
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function () { throw new DOMException('Full', 'QuotaExceededError'); };
+  try {
+    const { song, audioError, protectionError } = await openLocalSong(id);
+    assert.equal(audioError, undefined);
+    assert.equal((protectionError as Error).name, 'QuotaExceededError');
+    assert.deepEqual(await song?.layers[0].blob!.arrayBuffer(), await content.layers[0].blob!.arrayBuffer());
+  } finally { IDBObjectStore.prototype.put = put; }
+  const raw = await readLocal<any>('songs', id);
+  assert.equal(raw.revision, 7); assert.ok(raw.layers[0].blob instanceof Blob);
 });

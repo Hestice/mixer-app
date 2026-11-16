@@ -1,5 +1,5 @@
-import { storeRecordingContent } from './recording-storage';
-import { openDatabase, readLocal, songChanged, summarizeSong, type SavedSong } from './song-store';
+import { hasLegacyRecordings, storeRecordingContent, type StoredSong } from './recording-storage';
+import { openDatabase, openLocalSong, readLocal, songChanged, summarizeSong, type SavedSong } from './song-store';
 
 export interface BackupLink {
   id: string;
@@ -28,6 +28,9 @@ export async function setBackupPreference(ownerId: string, enabled: boolean) {
 // Claiming a song requires an explicit selection (or the opted-in new-song rule).
 // Ownership is separate from musical edits, so claiming doesn't invalidate an editor.
 export async function enableBackup(id: string, ownerId: string): Promise<BackupLink> {
+  const { audioError, protectionError } = await openLocalSong(id, ownerId);
+  if (audioError) throw audioError;
+  if (protectionError) throw protectionError;
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(['songs', 'summaries', 'backups'], 'readwrite');
@@ -35,8 +38,9 @@ export async function enableBackup(id: string, ownerId: string): Promise<BackupL
     let failure: Error | undefined;
     const request = tx.objectStore('songs').get(id);
     request.onsuccess = () => {
-      const song = request.result as SavedSong | undefined;
+      const song = request.result as StoredSong | undefined;
       if (!song || song.ownerId && song.ownerId !== ownerId) { failure = new Error('This song belongs to another account.'); tx.abort(); return; }
+      if (hasLegacyRecordings(song)) { failure = new Error('The song changed while preparing audio. Try backing it up again.'); tx.abort(); return; }
       const existing = tx.objectStore('backups').get(id);
       existing.onsuccess = () => {
         result = existing.result ?? { id, ownerId, remoteId: id, remoteRevision: 0, syncedLocalRevision: 0 };
