@@ -219,9 +219,6 @@
 @media(prefers-reduced-motion:reduce) { .art-preview-sleeve,.art-preview-disc { transition:none; }.opening-vinyl,.opening-record>.record-sleeve { animation:none; }.opening-vinyl { transform:translateX(35%); } }
 
 .song-sleeve>.record-sleeve { width:100%; height:100%; display:block; border-radius:3px; background:var(--sleeve-color,#718064); }.song-sleeve>.record-sleeve::after { content:none; }
-.spinning .vinyl-grooves { animation:turn-record 16s linear infinite; }
-@media(prefers-reduced-motion:reduce) { .spinning .vinyl-grooves { animation:none; } }
-
 .sleeve-type { color:var(--sleeve-ink,#fff8e7); }
 
 .record-customizer { overflow-x:hidden; }.art-styles { gap:14px; flex-wrap:wrap; }

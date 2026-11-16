@@ -1,13 +1,15 @@
 import type { CSSProperties } from 'react';
+import { useVinylRotation } from '../hooks/use-vinyl-rotation';
 import { artInk, recordArt, type RecordArt } from '../lib/record-art';
 
 export function ArtPhoto({ src, x, y, zoom }: {src:string; x:number; y:number; zoom:number}) {
   return <span className="art-photo" style={{ backgroundImage:`url("${src}")`, backgroundPosition:`${x}% ${y}%`, transform:`scale(${zoom})`, transformOrigin:`${x}% ${y}%` }} />;
 }
-export function RecordDisc({ artwork }: { artwork?:RecordArt }) {
+export function RecordDisc({ artwork, playing }: { artwork?:RecordArt; playing?: boolean }) {
   const art=recordArt(artwork);
+  const grooves = useVinylRotation(playing);
   return <span className="custom-vinyl" aria-hidden="true" style={{'--vinyl-color':art.vinylColor,'--label-color':art.labelColor,'--label-ink':artInk(art.labelColor)} as CSSProperties}>
-    <span className="vinyl-grooves" /><span className="vinyl-label">{art.labelPhoto && <ArtPhoto src={art.labelPhoto} x={art.labelX} y={art.labelY} zoom={art.labelZoom} />}<span className="vinyl-label-content"><small>SIDE A</small><span className="vinyl-mark">lr.</span><small>33⅓ RPM</small></span></span><span className="vinyl-spindle" />
+    <span ref={grooves} className="vinyl-grooves" /><span className="vinyl-label">{art.labelPhoto && <ArtPhoto src={art.labelPhoto} x={art.labelX} y={art.labelY} zoom={art.labelZoom} />}<span className="vinyl-label-content"><small>SIDE A</small><span className="vinyl-mark">lr.</span><small>33⅓ RPM</small></span></span><span className="vinyl-spindle" />
   </span>;
 }
 export function RecordSleeve({ artwork, title, className='' }: { artwork?:RecordArt; title:string; className?:string }) {
