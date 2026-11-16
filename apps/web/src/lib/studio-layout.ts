@@ -39,3 +39,20 @@ export function moveDeckPanel(layout: DeckLayout, panel: StudioPanel, position: 
   next[panel] = position;
   return next;
 }
+
+export type DeckSnapRegion = {
+  position: DeckPosition;
+  bounds: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom'>;
+};
+
+export function deckSnapPosition(
+  { x, y }: { x: number; y: number },
+  source: DeckPosition,
+  regions: DeckSnapRegion[],
+  hovered?: DeckPosition,
+): DeckPosition | null {
+  const edge = regions.find(({ position, bounds }) => position !== source
+    && x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom);
+  const target = edge?.position ?? hovered;
+  return target && target !== source ? target : null;
+}

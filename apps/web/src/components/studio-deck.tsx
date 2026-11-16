@@ -3,8 +3,8 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ExternalLink, GripVertical, PanelTop } from 'lucide-react';
-import { deckLayoutKey, deckPositions, defaultDeckLayout, moveDeckPanel, panelNames, readDeckLayout,
-  type DeckPosition, type StudioPanel } from '../lib/studio-layout';
+import { deckLayoutKey, deckPositions, deckSnapPosition, defaultDeckLayout, moveDeckPanel, panelNames, readDeckLayout,
+  type DeckPosition, type DeckSnapRegion, type StudioPanel } from '../lib/studio-layout';
 import type { StudioDeckControls } from '../hooks/use-studio-deck-controls';
 import type { useDetachedStudioPanels } from '../hooks/use-detached-studio-panels';
 import { panelIcons, RecorderPanel, TimelinePanel, TurntablePanel } from './studio-panel-content';
@@ -21,6 +21,7 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
   const grab = useRef<Grab | null>(null);
   const [announcement, setAnnouncement] = useState('');
   const grid = useRef<HTMLDivElement>(null);
+  const snapTargets = useRef<HTMLDivElement>(null);
   const beforeMove = useRef(new Map<string, DOMRect>());
   const focusAfterMove = useRef<StudioPanel | null>(null);
 
@@ -88,10 +89,16 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
     '--deck-stacked-rows': visible.map(item => item === expanded ? fill : 'auto').join(' '),
   } as CSSProperties;
 
-  function positionAt(x: number, y: number) {
-    const hit = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-position]');
-    if (!hit || !grid.current?.contains(hit)) return null;
-    return deckPositions.find(position => position === hit.dataset.position) ?? null;
+  function positionAt(x: number, y: number, panel: StudioPanel) {
+    const regions: DeckSnapRegion[] = deckPositions.flatMap(position => {
+      const target = snapTargets.current?.querySelector(`[data-position="${position}"]`);
+      return target ? [{ position, bounds: target.getBoundingClientRect() }] : [];
+    });
+    const hit = document.elementFromPoint(x, y)?.closest<HTMLElement>('.studio-deck-panel');
+    const hovered = hit && grid.current?.contains(hit)
+      ? deckPositions.find(position => position === hit.dataset.position)
+      : undefined;
+    return deckSnapPosition({ x, y }, layout[panel], regions, hovered);
   }
 
   function pickUp(event: PointerEvent<HTMLButtonElement>, panel: StudioPanel) {
@@ -106,7 +113,7 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
     const { clientX: x, clientY: y } = event;
     if (!origin.moving && Math.hypot(x - origin.x, y - origin.y) < 6) return;
     origin.moving = true;
-    setDrag({ panel: origin.panel, target: positionAt(x, y), cursor: { x, y } });
+    setDrag({ panel: origin.panel, target: positionAt(x, y, origin.panel), cursor: { x, y } });
   }
 
   function putDown(event: PointerEvent<HTMLButtonElement>, canceled = false) {
@@ -114,8 +121,9 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
     if (!origin || origin.pointer !== event.pointerId) return;
     grab.current = null;
     setDrag(null);
-    if (!canceled && origin.moving) {
-      const position = positionAt(event.clientX, event.clientY);
+    const { clientX: x, clientY: y } = event;
+    if (!canceled && (origin.moving || Math.hypot(x - origin.x, y - origin.y) >= 6)) {
+      const position = positionAt(x, y, origin.panel);
       if (position) move(origin.panel, position);
     }
   }
@@ -162,42 +170,45 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
           aria-label={`Dock ${panelNames[panel].toLowerCase()}`} title={`Dock ${panelNames[panel].toLowerCase()}`}><PanelTop size={14} aria-hidden="true" /></button>
       </div>)}
     </div>}
-    <div className="studio-deck-grid" ref={grid} style={style} data-sides={occupied.has('left') && occupied.has('right')}
-      data-timeline-side={visible.find(item => item.panel === 'timeline')?.position}>
-      {visible.map(({ panel, position }) => {
-        const Icon = panelIcons[panel];
-        const label = panelNames[panel];
-        return <div className="studio-deck-panel" key={panel} data-panel={panel} data-position={position} data-primary={expanded?.position === position}
-          data-filled={expanded?.position === position || sideFill && (position === 'left' || position === 'right')}
-          data-picked-up={drag?.panel === panel}
-          data-target={!!drag && drag.panel !== panel && drag.target === position}>
-          <div className="studio-panel-bar">
-            <button type="button" className="studio-panel-grip" aria-label={`Move ${label.toLowerCase()}`}
-              aria-describedby="studio-drag-help" title={`Drag to move ${label.toLowerCase()}`}
-              onPointerDown={event => pickUp(event, panel)} onPointerMove={followPointer}
-              onPointerUp={event => putDown(event)} onPointerCancel={event => putDown(event, true)}
-              onLostPointerCapture={event => putDown(event, true)} onKeyDown={event => arrangeWithKeyboard(event, panel)}
-              onClick={event => { if (event.detail === 0 && !grab.current) toggleKeyboardDrag(panel); }}
-              onBlur={() => { if (drag && !drag.cursor) setDrag(null); }}
-              onContextMenu={event => event.preventDefault()}>
-              <GripVertical className="studio-panel-grip-icon" size={14} aria-hidden="true" /><Icon size={13} aria-hidden="true" />{label}
-            </button>
-            <div className="studio-panel-actions">
-              <button type="button" className="studio-toolbar-button" aria-label={`Detach ${label.toLowerCase()}`}
-                title={`Open ${label.toLowerCase()} in a new tab`} onClick={() => tabs.detach(panel)}><ExternalLink size={14} aria-hidden="true" /></button>
+    <div className="studio-deck-area">
+      <div className="studio-deck-grid" ref={grid} style={style} data-single={visible.length === 1} data-sides={occupied.has('left') && occupied.has('right')}
+        data-timeline-side={visible.find(item => item.panel === 'timeline')?.position}>
+        {visible.map(({ panel, position }) => {
+          const Icon = panelIcons[panel];
+          const label = panelNames[panel];
+          return <div className="studio-deck-panel" key={panel} data-panel={panel} data-position={position} data-primary={expanded?.position === position}
+            data-filled={expanded?.position === position || sideFill && (position === 'left' || position === 'right')}
+            data-picked-up={drag?.panel === panel}
+            data-target={!!drag && drag.panel !== panel && drag.target === position}>
+            <div className="studio-panel-bar">
+              <button type="button" className="studio-panel-grip" aria-label={`Move ${label.toLowerCase()}`}
+                aria-describedby="studio-drag-help" title={`Drag to move ${label.toLowerCase()}`}
+                onPointerDown={event => pickUp(event, panel)} onPointerMove={followPointer}
+                onPointerUp={event => putDown(event)} onPointerCancel={event => putDown(event, true)}
+                onLostPointerCapture={event => putDown(event, true)} onKeyDown={event => arrangeWithKeyboard(event, panel)}
+                onClick={event => { if (event.detail === 0 && !grab.current) toggleKeyboardDrag(panel); }}
+                onBlur={() => { if (drag && !drag.cursor) setDrag(null); }}
+                onContextMenu={event => event.preventDefault()}>
+                <GripVertical className="studio-panel-grip-icon" size={14} aria-hidden="true" /><Icon size={13} aria-hidden="true" />{label}
+              </button>
+              <div className="studio-panel-actions">
+                <button type="button" className="studio-toolbar-button" aria-label={`Detach ${label.toLowerCase()}`}
+                  title={`Open ${label.toLowerCase()} in a new tab`} onClick={() => tabs.detach(panel)}><ExternalLink size={14} aria-hidden="true" /></button>
+              </div>
             </div>
-          </div>
-          {panel === 'turntable' ? <TurntablePanel deck={deck} /> : panel === 'timeline'
-            ? <TimelinePanel deck={deck} /> : <RecorderPanel deck={deck} />}
-        </div>;
-      })}
-      {drag && <div className="studio-drop-targets" aria-hidden="true">
-        {deckPositions.filter(position => !occupied.has(position)).map(position =>
-          <div key={position} data-position={position} data-target={drag.target === position}>
-            <span>{positionNames[position]}</span>
-          </div>)}
-      </div>}
-      {!visible.length && <p className="studio-all-detached">All panels are open in separate tabs.</p>}
+            {panel === 'turntable' ? <TurntablePanel deck={deck} /> : panel === 'timeline'
+              ? <TimelinePanel deck={deck} /> : <RecorderPanel deck={deck} />}
+          </div>;
+        })}
+        {!visible.length && <p className="studio-all-detached">All panels are open in separate tabs.</p>}
+      </div>
+      <div className="studio-drop-targets" ref={snapTargets} data-active={!!drag} aria-hidden="true">
+        {deckPositions.map(position => <div key={position} data-position={position}
+          data-source={drag && layout[drag.panel] === position}
+          data-target={drag?.target === position}>
+          <span>{positionNames[position]}</span>
+        </div>)}
+      </div>
     </div>
     {drag?.cursor && DragIcon && createPortal(<div className="studio-drag-preview" aria-hidden="true"
       style={{ left: drag.cursor.x, top: drag.cursor.y }}><DragIcon size={15} />{panelNames[drag.panel]}</div>, document.body)}
