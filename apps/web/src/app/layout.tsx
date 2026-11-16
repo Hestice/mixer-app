@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { RecordTransitionProvider } from '../components/record-transition';
 import { CloudProvider } from '../components/cloud-provider';
 
 export const metadata: Metadata = {
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><CloudProvider>{children}</CloudProvider></body></html>;
+  return <html lang="en"><body><CloudProvider><RecordTransitionProvider>{children}</RecordTransitionProvider></CloudProvider></body></html>;
 }
