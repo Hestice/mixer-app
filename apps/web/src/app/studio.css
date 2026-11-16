@@ -269,6 +269,23 @@
 .studio-input-meter i { display: block; height: 100%; background: #769462; transition: width .06s linear; }
 .studio-input-meter.clipping i { background: #b56751; }
 .studio-input small { display: block; margin-top: 7px; font-size: 10px; line-height: 1.5; color: var(--muted); }
+.studio-calibration-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 7px -5px -3px;
+  padding: 4px 5px 0;
+  border-top: 1px solid #dce3d2;
+  font-size: 11px;
+}
+.studio-calibration-row > span, .studio-calibration-progress { display: flex; align-items: center; gap: 5px; }
+.studio-calibration-row .studio-toolbar-button { font-size: 11px; padding: 6px; }
+.studio-calibration-note, .studio-calibration-progress { color: #536447; }
+.studio-calibration-progress svg { animation: studio-calibration-spin .9s linear infinite; }
+@keyframes studio-calibration-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .studio-calibration-progress svg { animation: none; } }
 .studio-live { margin-bottom: 10px; padding: 9px 12px; border: 1px solid #d4b8a8; background: #f5eae1; border-radius: 9px; }
 .studio-live .waveform i { max-width: none; }
 .studio-live .studio-beats { margin-top: 6px; }
