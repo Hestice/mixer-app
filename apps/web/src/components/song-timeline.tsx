@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState, type ReactNode } from 'react';
-import { Minimize2 } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
 import { ClipEditor } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
@@ -14,12 +13,10 @@ export function preciseTime(seconds: number) {
 type TimelineProps = {
   studio: Studio;
   span: number;
-  compact: boolean;
-  onToggleCompact: () => void;
   children: ReactNode;
 };
 
-export function SongTimeline({ studio, span, compact, onToggleCompact, children }: TimelineProps) {
+export function SongTimeline({ studio, span, children }: TimelineProps) {
   const [zoom, setZoom] = useState(1);
   const viewport = useRef<HTMLDivElement>(null);
   const disabled = studio.locked || studio.busy;
@@ -39,9 +36,6 @@ export function SongTimeline({ studio, span, compact, onToggleCompact, children 
         <label>Zoom<select aria-label="Timeline zoom" value={zoom} onChange={event => setZoom(Number(event.target.value))}>
           {[1, 2, 4, 8].map(value => <option key={value} value={value}>{value}×</option>)}
         </select></label>
-        <button className="timeline-density" aria-label="Compact view" aria-pressed={compact} onClick={onToggleCompact}>
-          <Minimize2 size={13} aria-hidden="true" /> Compact
-        </button>
       </div>
     </div>
     <p className="timeline-help">Drag the ruler to scrub. Drag a waveform to move it or drag its edges to trim.</p>
