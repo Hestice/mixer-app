@@ -10,3 +10,10 @@ export function recordingDelay(context: { baseLatency?: number; outputLatency?: 
 export function recordedPlacement(duration: number, position: number, delay: number) {
   return { startAt: Math.max(0, position), trimStart: Math.min(Math.max(0, duration - .05), Math.max(0, delay)), trimEnd: duration };
 }
+
+export function recordingSchedule(time: number, tempo: number, countIn: boolean) {
+  const beatSeconds = 60 / tempo;
+  const countAt = time + .12; // Give the worklet and backing tracks a common start time.
+  const startAt = countAt + (countIn ? 4 * beatSeconds : 0);
+  return { beatSeconds, countAt, startAt };
+}

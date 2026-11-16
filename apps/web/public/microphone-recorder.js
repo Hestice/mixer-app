@@ -3,6 +3,7 @@ class MicrophoneRecorder extends AudioWorkletProcessor {
   constructor() {
     super();
     this.startFrame = Infinity;
+    this.takeId = 0;
     this.recording = false;
     this.chunk = new Float32Array(4096);
     this.used = 0;
@@ -11,12 +12,13 @@ class MicrophoneRecorder extends AudioWorkletProcessor {
     this.port.onmessage = ({ data }) => {
       if (data.type === 'start') {
         this.startFrame = data.frame;
+        this.takeId = data.takeId;
         this.recording = true;
         this.used = 0;
       } else if (data.type === 'stop') {
         this.recording = false;
         this.flush();
-        this.port.postMessage({ type: 'done' });
+        this.port.postMessage({ type: 'done', takeId: this.takeId });
       } else if (data.type === 'cancel') {
         this.recording = false;
         this.used = 0;
@@ -26,7 +28,7 @@ class MicrophoneRecorder extends AudioWorkletProcessor {
   flush() {
     if (!this.used) return;
     const samples = this.chunk.slice(0, this.used);
-    this.port.postMessage({ type: 'samples', samples }, [samples.buffer]);
+    this.port.postMessage({ type: 'samples', takeId: this.takeId, samples }, [samples.buffer]);
     this.used = 0;
   }
   process(inputs, outputs) {

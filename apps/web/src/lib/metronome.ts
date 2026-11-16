@@ -1,6 +1,10 @@
 export type MetronomeMode = 'off' | 'visual' | 'sound';
 export const canSoundClick = (mode: MetronomeMode, headphones: boolean) => mode === 'sound' && headphones;
 
+export function metronomeBeatAt(time: number, start: number, beatSeconds: number) {
+  return time < start ? -1 : Math.floor((time - start) / beatSeconds);
+}
+
 /** Output-only click track. It never connects to the microphone recorder. */
 export class Metronome {
   private timer: ReturnType<typeof setInterval> | undefined;

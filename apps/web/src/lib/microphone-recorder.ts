@@ -8,12 +8,13 @@ export class MicrophoneRecorder {
   private fail: ((reason: Error) => void) | null = null;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private capturing = false;
+  private takeId = 0;
 
   static async open(context: AudioContext, stream: MediaStream, onLevel: (value: number) => void, onError: (error: Error) => void) {
     if (!context.audioWorklet) throw new Error('Recording needs a browser with AudioWorklet support. Try a current Safari, Chrome, Edge or Firefox.');
     let loaded = modules.get(context);
     if (!loaded) {
-      loaded = context.audioWorklet.addModule('/microphone-recorder.js').catch((error) => { modules.delete(context); throw error; });
+      loaded = context.audioWorklet.addModule('/microphone-recorder.js?v=2').catch((error) => { modules.delete(context); throw error; });
       modules.set(context, loaded);
     }
     await loaded;
@@ -27,8 +28,9 @@ export class MicrophoneRecorder {
     // The processor outputs silence. Neither song playback nor clicks feed its input.
     this.node.connect(context.destination);
     this.node.port.onmessage = ({ data }) => {
-      if (data.type === 'level') onLevel(data.value);
-      else if (data.type === 'samples' && this.capturing) this.chunks.push(data.samples);
+      if (data.type === 'level') { onLevel(data.value); return; }
+      if (data.takeId !== this.takeId) return;
+      if (data.type === 'samples' && this.capturing) this.chunks.push(data.samples);
       else if (data.type === 'done' && this.finish) {
         clearTimeout(this.timeout);
         const samples = new Float32Array(this.chunks.reduce((count, chunk) => count + chunk.length, 0));
@@ -49,20 +51,20 @@ export class MicrophoneRecorder {
   get sampleRate() { return this.context.sampleRate; }
   start(when: number) {
     this.chunks = []; this.capturing = true;
-    this.node.port.postMessage({ type: 'start', frame: Math.round(when * this.context.sampleRate) });
+    this.node.port.postMessage({ type: 'start', takeId: ++this.takeId, frame: Math.round(when * this.context.sampleRate) });
   }
   stop(): Promise<Float32Array> {
     return new Promise((resolve, reject) => {
       this.finish = resolve; this.fail = reject;
-      this.timeout = setTimeout(() => { this.cancel(); reject(new Error('The microphone stopped responding. Your kept layers are still here.')); }, 3000);
+      this.timeout = setTimeout(() => this.cancel(new Error('The microphone stopped responding. Your kept layers are still here.')), 3000);
       this.node.port.postMessage({ type: 'stop' });
     });
   }
-  cancel() {
+  cancel(reason = new Error('Recording canceled.')) {
     clearTimeout(this.timeout);
     this.node.port.postMessage({ type: 'cancel' });
     this.capturing = false; this.chunks = [];
-    this.fail?.(new Error('Recording canceled.'));
+    this.fail?.(reason);
     this.finish = this.fail = null;
   }
   dispose() {

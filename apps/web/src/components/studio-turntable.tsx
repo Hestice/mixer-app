@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { useTurntableMotion } from '../hooks/use-turntable-motion';
 import type { Studio } from '../hooks/use-studio';
 import { secondsForRotation } from '../lib/turntable-position';
@@ -28,7 +29,16 @@ function pointerAngle(event: PointerEvent<HTMLElement>) {
   return Math.atan2(y, x) * 180 / Math.PI;
 }
 
-export function StudioTurntable({ studio, span, duration, onEdit }: { studio: Studio; span: number; duration: number; onEdit: () => void }) {
+type TurntableProps = {
+  studio: Studio;
+  span: number;
+  duration: number;
+  compact: boolean;
+  onEdit: () => void;
+  onToggleCompact: () => void;
+};
+
+export function StudioTurntable({ studio, span, duration, compact, onEdit, onToggleCompact }: TurntableProps) {
   const { record, arm, cueing, cuePlayback, closeCue } = useTurntableMotion(studio.playing, {
     position: studio.position, readPosition: studio.readSongPosition, stopVersion: studio.stopVersion,
   });
@@ -91,7 +101,7 @@ export function StudioTurntable({ studio, span, duration, onEdit }: { studio: St
     event.preventDefault();
   }
 
-  return <div className="studio-song-top">
+  return <div className="studio-song-top" role="group" aria-label="Song transport">
     <div className="studio-turntable" data-studio-record={studio.songId}>
       <div className="platter-surround">
         <div className="platter studio-jog-wheel" role="slider" tabIndex={0} aria-label="Seek with vinyl" aria-describedby="studio-jog-help"
@@ -102,12 +112,12 @@ export function StudioTurntable({ studio, span, duration, onEdit }: { studio: St
         </div>
         <Tonearm playing={studio.playing || cueing} assemblyRef={arm} />
       </div>
-      <button className="text-button studio-art-edit" disabled={disabled} onClick={onEdit}>Edit record</button>
+      <div className="studio-art-edit-slot" inert={compact}>
+        <button className="text-button studio-art-edit" disabled={disabled} onClick={onEdit}>Edit record</button>
+      </div>
     </div>
     <div className="studio-song-summary">
-      <span className="studio-eyebrow">ONE PART AT A TIME</span>
-      <h1 id="studio-song-title">Your song</h1>
-      <p>{studio.layers.length ? `${studio.layers.length} ${studio.layers.length === 1 ? 'layer' : 'layers'} · ${timeLabel(duration)}` : 'A little room for your next idea.'}</p>
+      <p className="studio-song-meta">{studio.layers.length} {studio.layers.length === 1 ? 'layer' : 'layers'} · {timeLabel(duration)}</p>
       <div className="studio-transport">
         <button className="button button-light" disabled={!canPlay || disabled} onClick={toggle}>
           {studio.playing ? <Pause size={15} /> : <Play size={15} />}{studio.playing ? 'Pause' : cueing ? 'Cueing…' : 'Play song'}
@@ -118,7 +128,13 @@ export function StudioTurntable({ studio, span, duration, onEdit }: { studio: St
         }}><Square size={14} />Stop</button>
         <time>{preciseTime(studio.position)}</time>
       </div>
-      <p id="studio-jog-help" className="studio-jog-help">Drag the record to seek.</p>
+      <div className="studio-deck-footer">
+        <button className="studio-toolbar-button studio-deck-size" onClick={onToggleCompact}>
+          {compact ? <Maximize2 size={13} aria-hidden="true" /> : <Minimize2 size={13} aria-hidden="true" />}
+          {compact ? 'Expand deck' : 'Compact deck'}
+        </button>
+        <p id="studio-jog-help" className="studio-jog-help">Drag the record to seek.</p>
+      </div>
     </div>
   </div>;
 }
