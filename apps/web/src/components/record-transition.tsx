@@ -1,12 +1,12 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import type { RecordArt } from '../lib/record-art';
 import { RecordDisc } from './record-artwork';
 
-type Flight = { direction: 'studio' | 'songs'; songId: string; artwork?: RecordArt; from: DOMRect };
+type Flight = { key: number; direction: 'studio' | 'songs'; songId: string; artwork?: RecordArt; from: DOMRect };
 const EXIT_MS = 460;
 const GROW_MS = 360;
 const DOCK_MS = 440;
@@ -44,12 +44,13 @@ export const useRecordNavigation = () => useContext(Context)!;
 
 export function RecordTransitionProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [flight, setFlight] = useState<Flight | null>(null);
   const flightRef = useRef<Flight | null>(null);
+  const flightKey = useRef(0);
   const overlay = useRef<HTMLDivElement>(null);
   const animations = useRef<Animation[]>([]);
   const resetStudio = useRef<() => void>(undefined);
+  const stagedDesk = useRef<HTMLElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const landing = useRef(false);
   // Only a studio entered from the collection uses browser Back for My songs.
@@ -60,6 +61,7 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
     flightRef.current = null;
     landing.current = false;
     clearTimeout(timer.current);
+    if (overlay.current) overlay.current.style.visibility = 'hidden';
     for (const animation of animations.current) animation.cancel();
     animations.current = [];
     resetStudio.current?.();
@@ -83,7 +85,7 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
     const collection = sleeve?.closest<HTMLElement>('[data-song-collection]');
     const from = discIn(sleeve?.parentElement ?? null)?.getBoundingClientRect();
     const next: Flight | null = motionAllowed() && collection && usable(from)
-      ? { direction: 'studio', songId: '', artwork, from }
+      ? { key: ++flightKey.current, direction: 'studio', songId: '', artwork, from }
       : null;
 
     try {
@@ -138,14 +140,15 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
   }
 
   const startReturn = useCallback((songId: string, artwork?: RecordArt) => {
-    const disc = studioDisc(songId);
-    if (motionAllowed() && disc) {
-      const from = viewportRect(disc);
-      if (usable(from)) {
-        begin({ direction: 'songs', songId, artwork, from });
-        timer.current = setTimeout(finish, 6000);
-      }
-    }
+    if (!motionAllowed()) return false;
+    const node = overlay.current;
+    const flyingIn = flightRef.current?.direction === 'studio' && node && node.style.visibility !== 'hidden';
+    const from = (flyingIn ? node : studioDisc(songId))?.getBoundingClientRect();
+    if (!usable(from) || from.bottom <= 0 || from.top >= window.innerHeight) return false;
+
+    begin({ key: ++flightKey.current, direction: 'songs', songId, artwork, from });
+    timer.current = setTimeout(finish, 6000);
+    return true;
   }, [begin, finish]);
 
   function returnToSongs(songId: string, artwork?: RecordArt) {
@@ -162,8 +165,8 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
       }
       if (flightRef.current?.direction === 'songs') return;
       const id = document.querySelector<HTMLElement>('[data-studio-record]')?.dataset.studioRecord;
-      if (id) startReturn(id, studioArtwork.current?.songId === id ? studioArtwork.current.artwork : undefined);
-      else if (flightRef.current) finish();
+      if (id && startReturn(id, studioArtwork.current?.songId === id ? studioArtwork.current.artwork : undefined)) return;
+      if (flightRef.current) finish();
     };
     window.addEventListener('popstate', onBack);
     return () => { window.removeEventListener('popstate', onBack); clearTimeout(timer.current); };
@@ -184,11 +187,12 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
     const previousPadding = shell.style.paddingTop;
     const wasInert = shell.inert;
     let frame = 0;
+    stagedDesk.current = shell;
     resetStudio.current = () => {
       cancelAnimationFrame(frame);
       shell.style.paddingTop = previousPadding;
       shell.inert = wasInert;
-      delete shell.dataset.recordDocking;
+      shell.dataset.recordDocking = 'seated';
       if (location.pathname === '/studio') scrollTo(0);
     };
 
@@ -236,21 +240,26 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
     }
 
     const sleeve = sleeveFor(move.songId);
-    const disc = discIn(sleeve?.parentElement ?? null);
-    if (!sleeve || !disc) { finish(); return; }
+    const thumbnail = sleeve?.parentElement?.querySelector<HTMLElement>('.song-artwork-disc');
+    if (!sleeve || !thumbnail) { finish(); return; }
     viewportRect(sleeve);
-    const bounds = disc.getBoundingClientRect();
+    const bounds = thumbnail.getBoundingClientRect();
     if (!usable(bounds)) { finish(); return; }
-    const scale = bounds.width / move.from.width;
-    const outside = `${translate(bounds.left + bounds.width * .48, bounds.top)} scale(${scale})`;
-    const inside = `${translate(bounds.left, bounds.top)} scale(${scale})`;
-    animate(node, [
-      { transform: translate(move.from.left, move.from.top) },
-      { transform: outside },
-    ], 560).onfinish = () => {
+
+    // Take over with the row's own disc so the sleeve can cover it for the entire return.
+    const from = `${translate(move.from.left - bounds.left, move.from.top - bounds.top)} scale(${move.from.width / bounds.width})`;
+    const outside = translate(sleeve.getBoundingClientRect().right - bounds.left, 0);
+    const glide = animate(thumbnail, [
+      { transform: from, visibility: 'visible' },
+      { transform: outside, visibility: 'visible' },
+    ], 560);
+    node.style.visibility = 'hidden';
+    glide.onfinish = () => {
       if (flightRef.current !== move) return;
-      node.dataset.tucking = 'true';
-      animate(node, [{ transform: outside }, { transform: inside }], 340).onfinish = () => {
+      animate(thumbnail, [
+        { transform: outside, visibility: 'visible' },
+        { transform: translate(0, 0), visibility: 'visible' },
+      ], 340).onfinish = () => {
         if (flightRef.current === move) finish();
       };
     };
@@ -258,12 +267,17 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
 
   // The overlay is mounted in the root layout, so the same disc survives route changes.
   const rememberArtwork = useCallback((songId: string, artwork?: RecordArt) => { studioArtwork.current = { songId, artwork }; }, []);
-  const staging = flight?.direction === 'studio' && pathname === '/studio';
-  const returnRow = flight?.direction === 'songs' ? flight.songId : undefined;
+  const staging = flight?.direction === 'studio';
+  useLayoutEffect(() => {
+    if (staging || !stagedDesk.current) return;
+    // Keep the seated record visible until React removes the stage's visibility rules.
+    delete stagedDesk.current.dataset.recordDocking;
+    stagedDesk.current = null;
+  }, [staging]);
   return <Context.Provider value={{ flight, enterStudio, returnToSongs, arrive, finish, rememberArtwork }}>
-    <div data-record-stage={staging || undefined} data-record-return={returnRow} data-record-flight={flight?.direction}>
+    <div data-record-flight={flight?.direction}>
       {children}
-      {flight && <div key={flight.direction} ref={overlay} className="record-flight" data-direction={flight.direction} aria-hidden="true" style={{ width: flight.from.width, height: flight.from.height, transform: translate(flight.from.left, flight.from.top) }}><RecordDisc artwork={flight.artwork} /></div>}
+      {flight && <div key={flight.key} ref={overlay} className="record-flight" data-direction={flight.direction} aria-hidden="true" style={{ width: flight.from.width, height: flight.from.height, transform: translate(flight.from.left, flight.from.top) }}><RecordDisc artwork={flight.artwork} /></div>}
     </div>
   </Context.Provider>;
 }

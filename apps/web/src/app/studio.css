@@ -229,9 +229,9 @@
 .song-artwork { position: relative; flex: none; padding-right: 18px; }
 .song-artwork .song-sleeve { position: relative; z-index: 1; }
 .song-artwork-disc { position: absolute; left: 2px; top: 2px; width: 86px; aspect-ratio: 1; transition: transform .24s cubic-bezier(.22,.74,.25,1); }
-.song-card:not([aria-disabled=true]):focus-visible .song-artwork-disc { transform: translateX(19%); }
+.song-card:not([aria-disabled=true]):focus-visible .song-artwork:not(.is-returning) .song-artwork-disc { transform: translateX(19%); }
 @media (hover: hover) {
-  .song-card:not([aria-disabled=true]):hover .song-artwork-disc { transform: translateX(19%); }
+  .song-card:not([aria-disabled=true]):hover .song-artwork:not(.is-returning) .song-artwork-disc { transform: translateX(19%); }
 }
 .song-card[aria-disabled=true] { cursor: default; }
 .song-card[aria-busy=true] { cursor: progress; }
@@ -244,13 +244,12 @@
 @media (prefers-reduced-motion: reduce) { .song-artwork-disc { transition: none; } }
 
 .record-flight { position: fixed; top: 0; left: 0; z-index: 55; pointer-events: none; transform-origin: 0 0; }
-.record-flight[data-tucking=true] { z-index: 24; }
-.song-artwork.is-returning .song-sleeve { z-index: 25; }
+.song-artwork.is-returning .song-artwork-disc { transform-origin: 0 0; transition: none; }
 [data-record-flight=studio] [data-song-collection] { pointer-events: none; }
 [data-record-flight=studio] .song-artwork.is-opening .song-artwork-disc,
 [data-record-flight=songs] .song-artwork.is-returning .song-artwork-disc,
 [data-record-flight=songs] [data-studio-record] .custom-vinyl { visibility: hidden; }
 
-[data-record-stage] { overflow-x: clip; }
-[data-record-stage] .studio-app:not([data-record-docking]) { visibility: hidden; }
-[data-record-stage] .studio-app:not([data-record-docking=seated]) [data-studio-record] .custom-vinyl { visibility: hidden; }
+[data-record-flight=studio] { overflow-x: clip; }
+[data-record-flight=studio] .studio-app:not([data-song-collection], [data-record-docking]) { visibility: hidden; }
+[data-record-flight=studio] .studio-app:not([data-record-docking=seated]) [data-studio-record] .custom-vinyl { visibility: hidden; }
