@@ -4,10 +4,11 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { listSongs } from '../lib/song-store';
-import { enableBackup, listBackups, getBackupPreference, setBackupPreference, removeDownloadedCopies, type BackupLink } from '../lib/backup-store';
+import { getBackup, enableBackup, listBackups, getBackupPreference, setBackupPreference, removeDownloadedCopies, type BackupLink } from '../lib/backup-store';
 import { syncSong, openCloudSong, SyncCanceledError } from '../lib/cloud-sync';
 import { cloudMessage, supabaseTransport } from '../lib/supabase-transport';
-import type { CloudSong } from '../lib/cloud-manifest';
+import { recoverLayerAudio, type CloudSong } from '../lib/cloud-manifest';
+import type { Layer } from '../lib/session';
 
 function useCloudState() {
   const [client] = useState(getSupabase);
@@ -132,6 +133,19 @@ function useCloudState() {
     if (!active()) throw new Error('Your account changed. Please open the song again.');
     return localId;
   }
+  async function recoverRecordings(id: string, layer: Layer) {
+    const ownerId = sessionRef.current?.user.id, generation = epoch.current;
+    if (!client || !ownerId) return new Map<string, Blob>();
+    const active = () => sessionRef.current?.user.id === ownerId && epoch.current === generation && !paused.current;
+    const link = await getBackup(id);
+    if (!link || link.ownerId !== ownerId || !active()) return new Map<string, Blob>();
+    const transport = supabaseTransport(client, ownerId, active);
+    const remote = await transport.get(link.remoteId);
+    if (!remote || remote.owner_id !== ownerId || !active()) return new Map<string, Blob>();
+    const audio = await recoverLayerAudio(layer, remote.content, ownerId, async path => { if (!active()) throw new SyncCanceledError(); return transport.download(path); });
+    if (!active()) throw new SyncCanceledError();
+    return audio;
+  }
   async function signOut(removeCopies: boolean) {
     if (!client) return;
     const ownerId = sessionRef.current?.user.id;
@@ -151,7 +165,7 @@ function useCloudState() {
     return uploading === id ? 'Backing up…' : 'Waiting to back up';
   }
   return { client, configured: !!client, user: session?.user ?? null, ready, links, remoteSongs, autoBackup, online,
-    error, errors, version, status, selectSongs, setAutomatic, openRemote, signOut, retry: () => trigger.current() };
+    error, errors, version, status, selectSongs, setAutomatic, openRemote, recoverRecordings, signOut, retry: () => trigger.current() };
 }
 
 type CloudState = ReturnType<typeof useCloudState>;

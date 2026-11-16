@@ -230,3 +230,12 @@ test('recording from a nonzero cursor schedules delayed and already-running back
   FakeContext.current.currentTime=11; assert.equal(engine.position,4);
   engine.dispose();
 });
+
+
+test('a recording read failure identifies the layer and retains the browser error as its cause', async () => {
+  const engine=new AudioEngine();const broken=new Blob(['audio']);
+  const cause=new DOMException('The object can not be found here.','NotFoundError');
+  Object.defineProperty(broken,'arrayBuffer',{value:async()=>{throw cause;}});
+  await assert.rejects(engine.addRecording('voice',broken,'Lead vocals'),error=>error instanceof Error && error.message.includes('Lead vocals') && error.message.includes('NotFoundError') && error.cause===cause);
+  assert.equal(engine.playing,false);engine.dispose();
+});

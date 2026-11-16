@@ -1,3 +1,4 @@
+import { readRecording } from './recording-storage';
 import { createSongOutput, OUTPUT_DELAY } from './audio-output';
 import { clipBounds, selectTake } from './clip-edits';
 import type { Layer } from './session';
@@ -30,7 +31,7 @@ export async function exportSong(layers: Layer[], volume: number, onStage?: (sta
     let bytes: ArrayBuffer;
     if (layer.recorded) {
       if (!layer.blob) throw new Error(`The recording for “${layer.name}” is missing. Reopen the song from your backup and try again.`);
-      bytes = await layer.blob.arrayBuffer();
+      bytes = await readRecording(layer.blob, layer.name);
     } else {
       if (!DEMO_IDS.has(layer.id)) throw new Error(`The audio for “${layer.name}” is unavailable.`);
       const response = await fetch(`/audio/${layer.id}.wav`);
