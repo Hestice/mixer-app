@@ -3,20 +3,19 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { ExternalLink, GripVertical, PanelTop } from 'lucide-react';
-import { deckLayoutKey, deckPositions, deckSnapPosition, defaultDeckLayout, moveDeckPanel, panelNames, readDeckLayout,
-  type DeckPosition, type DeckSnapRegion, type StudioPanel } from '../lib/studio-layout';
+import { deckDropTarget, deckGrid, deckLayoutKey, deckPositions, defaultDeckLayout, dockDeckPanel, isStudioPanel,
+  panelAtDeckEdge, panelNames, readDeckLayout, swapDeckPanels, visibleDeckLayout,
+  type DeckDrop, type DeckLayout, type DeckSnapRegion, type StudioPanel } from '../lib/studio-layout';
 import type { StudioDeckControls } from '../hooks/use-studio-deck-controls';
 import type { useDetachedStudioPanels } from '../hooks/use-detached-studio-panels';
 import { panelIcons, RecorderPanel, TimelinePanel, TurntablePanel } from './studio-panel-content';
 
-const positionNames = { top: 'Top', left: 'Left', right: 'Right', bottom: 'Bottom' };
 const arrowPositions = { ArrowUp: 'top', ArrowLeft: 'left', ArrowRight: 'right', ArrowDown: 'bottom' } as const;
-const panelIds = Object.keys(panelNames) as StudioPanel[];
-type Drag = { panel: StudioPanel; target: DeckPosition | null; cursor?: { x: number; y: number } };
+type Drag = { panel: StudioPanel; target: DeckDrop | null; cursor?: { x: number; y: number } };
 type Grab = { panel: StudioPanel; pointer: number; x: number; y: number; moving: boolean };
 
 export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: ReturnType<typeof useDetachedStudioPanels> }) {
-  const [layout, setLayout] = useState(defaultDeckLayout);
+  const [layout, setLayout] = useState<DeckLayout>(defaultDeckLayout);
   const [drag, setDrag] = useState<Drag | null>(null);
   const grab = useRef<Grab | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -61,44 +60,46 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
     catch { /* Use the new layout for the current session. */ }
   }
 
-  function move(panel: StudioPanel, position: DeckPosition, keyboard = false) {
-    const next = moveDeckPanel(layout, panel, position);
-    if (next !== layout) {
-      if (keyboard) focusAfterMove.current = panel;
-      saveLayout(next);
-      setAnnouncement(`${panelNames[panel]} moved to the ${position}.`);
-    }
+  function move(panel: StudioPanel, target: DeckDrop, keyboard = false) {
+    const next = target.kind === 'dock' ? dockDeckPanel(layout, panel, target.position) : swapDeckPanels(layout, panel, target.panel);
+    if (next === layout) return;
+    if (keyboard) focusAfterMove.current = panel;
+    saveLayout(next);
+    setAnnouncement(target.kind === 'dock'
+      ? `${panelNames[panel]} docked at the ${target.position}.`
+      : `${panelNames[panel]} swapped with ${panelNames[target.panel]}.`);
   }
 
-  const visible = deckPositions.flatMap(position => {
-    const panel = panelIds.find(id => layout[id] === position && !tabs.panels.includes(id));
-    return panel ? [{ panel, position }] : [];
-  });
-  const occupied = new Set(visible.map(item => item.position));
-  const expanded = visible.find(item => item.panel === 'timeline')
-    ?? visible.find(item => item.panel === 'recorder') ?? visible[0];
-  const fill = 'minmax(145px, 1fr)';
-  const sideFill = expanded?.position === 'left' || expanded?.position === 'right';
-  const rows = [
-    expanded?.position === 'top' ? fill : occupied.has('top') ? 'auto' : '0px',
-    sideFill ? fill : occupied.has('left') || occupied.has('right') ? 'auto' : '0px',
-    expanded?.position === 'bottom' ? fill : occupied.has('bottom') ? 'auto' : '0px',
-  ].join(' ');
+  const attached = visibleDeckLayout(layout, tabs.panels);
+  const matrix = attached ? deckGrid(attached) : [];
+  const visible = [...new Set(matrix.flat())];
+  const primary = visible.includes('timeline') ? 'timeline' : visible.includes('recorder') ? 'recorder' : visible[0];
+  const primaryRow = matrix.findIndex(row => row.includes(primary) && row.includes('recorder'));
+  const fillRow = primaryRow < 0 ? matrix.findIndex(row => row.includes(primary)) : primaryRow;
+  const trackCount = matrix[0]?.length ?? 0;
+  const timelineColumns = Array.from({ length: trackCount }, (_, column) => column)
+    .filter(column => matrix.some(row => row[column] === 'timeline'));
   const style = {
-    '--deck-rows': rows,
-    '--deck-stacked-rows': visible.map(item => item === expanded ? fill : 'auto').join(' '),
+    '--deck-areas': matrix.map(row => `"${row.join(' ')}"`).join(' '),
+    '--deck-rows': matrix.map((_, index) => index === fillRow ? 'minmax(145px, 1fr)' : 'auto').join(' '),
+    '--deck-columns': Array.from({ length: trackCount }, (_, index) =>
+      timelineColumns.length === 1 && index !== timelineColumns[0]
+        ? `minmax(0, min(${trackCount === 3 ? 25 : 38}%, 335px))`
+        : 'minmax(0, 1fr)').join(' '),
+    '--deck-stacked-rows': visible.map(panel => panel === primary ? 'minmax(145px, 1fr)' : 'auto').join(' '),
   } as CSSProperties;
+  const savedGrid = deckGrid(layout);
+  const edgePanels = deckPositions.map(position => panelAtDeckEdge(savedGrid, position));
 
   function positionAt(x: number, y: number, panel: StudioPanel) {
-    const regions: DeckSnapRegion[] = deckPositions.flatMap(position => {
+    const regions: DeckSnapRegion[] = deckPositions.flatMap((position, index) => {
+      if (edgePanels[index] === panel) return [];
       const target = snapTargets.current?.querySelector(`[data-position="${position}"]`);
       return target ? [{ position, bounds: target.getBoundingClientRect() }] : [];
     });
     const hit = document.elementFromPoint(x, y)?.closest<HTMLElement>('.studio-deck-panel');
-    const hovered = hit && grid.current?.contains(hit)
-      ? deckPositions.find(position => position === hit.dataset.position)
-      : undefined;
-    return deckSnapPosition({ x, y }, layout[panel], regions, hovered);
+    const hovered = hit && grid.current?.contains(hit) ? hit.dataset.panel : undefined;
+    return deckDropTarget({ x, y }, panel, regions, isStudioPanel(hovered) ? hovered : undefined);
   }
 
   function pickUp(event: PointerEvent<HTMLButtonElement>, panel: StudioPanel) {
@@ -130,12 +131,12 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
 
   function toggleKeyboardDrag(panel: StudioPanel) {
     if (drag?.panel === panel && !drag.cursor) {
-      if (drag.target && drag.target !== layout[panel]) move(panel, drag.target, true);
+      if (drag.target) move(panel, drag.target, true);
       else setAnnouncement(`${panelNames[panel]} stays in place.`);
       setDrag(null);
     } else {
-      setDrag({ panel, target: layout[panel] });
-      setAnnouncement(`${panelNames[panel]} picked up. Use the arrow keys to choose a position, then press Enter to drop.`);
+      setDrag({ panel, target: null });
+      setAnnouncement(`${panelNames[panel]} picked up. Use the arrow keys to choose an edge or S to choose a panel to swap with.`);
     }
   }
 
@@ -152,9 +153,17 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
     } else if (carrying && Object.hasOwn(arrowPositions, event.key)) {
       event.preventDefault();
       const position = arrowPositions[event.key as keyof typeof arrowPositions];
-      const occupant = visible.find(item => item.position === position && item.panel !== panel);
-      setDrag({ panel, target: position });
-      setAnnouncement(occupant ? `${positionNames[position]}. Swap with ${panelNames[occupant.panel]}.` : positionNames[position]);
+      const alreadyDocked = edgePanels[deckPositions.indexOf(position)] === panel;
+      setDrag({ panel, target: alreadyDocked ? null : { kind: 'dock', position } });
+      setAnnouncement(alreadyDocked ? `Already docked at the ${position}.` : `Dock ${position}.`);
+    } else if (carrying && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      const others = visible.filter(other => other !== panel);
+      if (!others.length) return;
+      const index = drag.target?.kind === 'swap' ? others.indexOf(drag.target.panel) : -1;
+      const other = others[(index + 1) % others.length];
+      setDrag({ panel, target: { kind: 'swap', panel: other } });
+      setAnnouncement(`Swap with ${panelNames[other]}.`);
     }
   }
 
@@ -171,15 +180,18 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
       </div>)}
     </div>}
     <div className="studio-deck-area">
-      <div className="studio-deck-grid" ref={grid} style={style} data-single={visible.length === 1} data-sides={occupied.has('left') && occupied.has('right')}
-        data-timeline-side={visible.find(item => item.panel === 'timeline')?.position}>
-        {visible.map(({ panel, position }) => {
+      <div className="studio-deck-grid" ref={grid} style={style}>
+        {visible.map(panel => {
           const Icon = panelIcons[panel];
           const label = panelNames[panel];
-          return <div className="studio-deck-panel" key={panel} data-panel={panel} data-position={position} data-primary={expanded?.position === position}
-            data-filled={expanded?.position === position || sideFill && (position === 'left' || position === 'right')}
+          const row = matrix.findIndex(track => track.includes(panel));
+          const column = matrix[row].indexOf(panel);
+          const narrow = matrix[row].lastIndexOf(panel) - column + 1 < trackCount;
+          return <div className="studio-deck-panel" key={panel} style={{ '--panel-area': panel } as CSSProperties}
+            data-panel={panel} data-primary={panel === primary} data-narrow={narrow}
+            data-divider-top={row > 0} data-divider-left={column > 0} data-filled={matrix[fillRow]?.includes(panel)}
             data-picked-up={drag?.panel === panel}
-            data-target={!!drag && drag.panel !== panel && drag.target === position}>
+            data-target={drag?.target?.kind === 'swap' && drag.target.panel === panel}>
             <div className="studio-panel-bar">
               <button type="button" className="studio-panel-grip" aria-label={`Move ${label.toLowerCase()}`}
                 aria-describedby="studio-drag-help" title={`Drag to move ${label.toLowerCase()}`}
@@ -203,16 +215,18 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
         {!visible.length && <p className="studio-all-detached">All panels are open in separate tabs.</p>}
       </div>
       <div className="studio-drop-targets" ref={snapTargets} data-active={!!drag} aria-hidden="true">
-        {deckPositions.map(position => <div key={position} data-position={position}
-          data-source={drag && layout[drag.panel] === position}
-          data-target={drag?.target === position}>
-          <span>{positionNames[position]}</span>
+        {deckPositions.map((position, index) => <div key={position} data-position={position}
+          data-source={drag?.panel === edgePanels[index]}
+          data-target={drag?.target?.kind === 'dock' && drag.target.position === position}>
+          <span>Dock {position}</span>
         </div>)}
       </div>
     </div>
     {drag?.cursor && DragIcon && createPortal(<div className="studio-drag-preview" aria-hidden="true"
-      style={{ left: drag.cursor.x, top: drag.cursor.y }}><DragIcon size={15} />{panelNames[drag.panel]}</div>, document.body)}
-    <span className="studio-sr-only" id="studio-drag-help">Drag to rearrange. With a keyboard, press Space to pick up, use the arrow keys to choose a position, then press Enter to drop.</span>
+      style={{ left: drag.cursor.x, top: drag.cursor.y }}><DragIcon size={15} />
+      {drag.target?.kind === 'swap' ? `Swap with ${panelNames[drag.target.panel]}` : panelNames[drag.panel]}
+    </div>, document.body)}
+    <span className="studio-sr-only" id="studio-drag-help">Drag to an edge to dock or onto another panel to swap. With a keyboard, press Space to pick up, use the arrow keys for an edge or S to choose a panel, then press Enter to drop.</span>
     <span className="studio-sr-only" role="status">{announcement}</span>
   </>;
 }

@@ -1,55 +1,63 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deckSnapPosition, defaultDeckLayout, moveDeckPanel, readDeckLayout, type DeckSnapRegion } from './studio-layout';
+import { deckDropTarget, deckGrid, defaultDeckLayout, dockDeckPanel, panelAtDeckEdge, readDeckLayout, swapDeckPanels,
+  visibleDeckLayout, type DeckSnapRegion } from './studio-layout';
 
-test('dropping a panel onto an occupied position swaps both panels', () => {
-  const moved = moveDeckPanel(defaultDeckLayout, 'turntable', 'right');
-  assert.deepEqual(moved, { turntable: 'right', timeline: 'left', recorder: 'top' });
-  assert.equal(defaultDeckLayout.turntable, 'top');
+test('docking the recorder at the left edge spans the full height and preserves the order of the other panels', () => {
+  const docked = dockDeckPanel(defaultDeckLayout, 'recorder', 'left');
+  assert.deepEqual(deckGrid(docked), [['recorder', 'turntable'], ['recorder', 'timeline']]);
+  assert.equal(panelAtDeckEdge(deckGrid(docked), 'left'), 'recorder');
+  assert.equal(dockDeckPanel(docked, 'recorder', 'left'), docked);
+  assert.deepEqual(readDeckLayout(JSON.stringify(docked)), docked);
 });
 
-test('dropping into an empty position moves only the dragged panel', () => {
-  const moved = moveDeckPanel(defaultDeckLayout, 'recorder', 'bottom');
-  assert.deepEqual(moved, { turntable: 'top', timeline: 'left', recorder: 'bottom' });
-  assert.equal(moveDeckPanel(moved, 'recorder', 'bottom'), moved);
-  assert.deepEqual(readDeckLayout(JSON.stringify(moved)), moved);
+test('docking the timeline at the right edge gives it the full height', () => {
+  const docked = dockDeckPanel(defaultDeckLayout, 'timeline', 'right');
+  assert.deepEqual(deckGrid(docked), [['turntable', 'timeline'], ['recorder', 'timeline']]);
 });
 
-test('a corrupt layout preference cannot hide or overlap panels', () => {
+test('swapping directly with a panel preserves the existing grid shape', () => {
+  const swapped = swapDeckPanels(defaultDeckLayout, 'recorder', 'timeline');
+  assert.deepEqual(deckGrid(swapped), [['turntable', 'turntable'], ['recorder', 'timeline']]);
+  assert.equal(panelAtDeckEdge(deckGrid(swapped), 'left'), null);
+});
+
+test('top and bottom edge docking spans the full width', () => {
+  const top = dockDeckPanel(defaultDeckLayout, 'recorder', 'top');
+  const bottom = dockDeckPanel(defaultDeckLayout, 'turntable', 'bottom');
+  assert.deepEqual(deckGrid(top), [['recorder'], ['turntable'], ['timeline']]);
+  assert.deepEqual(deckGrid(bottom), [['timeline', 'recorder'], ['turntable', 'turntable']]);
+});
+
+test('detaching a panel gives its space to the remaining panels', () => {
+  const layout = dockDeckPanel(defaultDeckLayout, 'recorder', 'left');
+  const remaining = visibleDeckLayout(layout, ['recorder']);
+  assert.ok(remaining);
+  assert.deepEqual(deckGrid(remaining), [['turntable'], ['timeline']]);
+  assert.equal(visibleDeckLayout(layout, ['recorder', 'timeline', 'turntable']), null);
+});
+
+test('older layouts retain the panels and their order', () => {
+  assert.deepEqual(readDeckLayout('{"turntable":"top","timeline":"left","recorder":"right"}'), defaultDeckLayout);
+  const stacked = readDeckLayout('{"turntable":"top","timeline":"right","recorder":"bottom"}');
+  assert.deepEqual(deckGrid(stacked), [['turntable'], ['timeline'], ['recorder']]);
+});
+
+test('a corrupt layout preference falls back to the default', () => {
   for (const value of [null, '{', 'null', '{}',
     '{"turntable":"top","timeline":"top","recorder":"right"}',
-    '{"turntable":"top","timeline":"left","recorder":"hidden"}']) {
+    '{"axis":"rows","first":"turntable","second":{"axis":"columns","first":"timeline","second":"timeline"}}']) {
     assert.deepEqual(readDeckLayout(value), defaultDeckLayout);
   }
 });
 
 const snapRegions: DeckSnapRegion[] = [
-  { position: 'top', bounds: { left: 200, right: 800, top: 100, bottom: 160 } },
   { position: 'left', bounds: { left: 0, right: 200, top: 100, bottom: 700 } },
-  { position: 'right', bounds: { left: 800, right: 1000, top: 100, bottom: 700 } },
-  { position: 'bottom', bounds: { left: 200, right: 800, top: 640, bottom: 700 } },
 ];
 
-test('the right snap zone overrides the panel underneath it', () => {
-  assert.equal(deckSnapPosition({ x: 900, y: 350 }, 'left', snapRegions, 'left'), 'right');
-});
-
-test('a panel can move from the bottom to any other edge', () => {
-  const stacked = moveDeckPanel(defaultDeckLayout, 'recorder', 'bottom');
-  const destinations = [
-    { x: 500, y: 130, expected: 'top' },
-    { x: 100, y: 400, expected: 'left' },
-    { x: 900, y: 400, expected: 'right' },
-  ] as const;
-  for (const { x, y, expected } of destinations) {
-    const position = deckSnapPosition({ x, y }, 'bottom', snapRegions);
-    assert.equal(position, expected);
-    assert.equal(moveDeckPanel(stacked, 'recorder', position).recorder, expected);
-  }
-});
-
-test('dropping on a panel between snap zones swaps it, while releasing on the source or outside the deck cancels', () => {
-  assert.equal(deckSnapPosition({ x: 500, y: 400 }, 'right', snapRegions, 'top'), 'top');
-  assert.equal(deckSnapPosition({ x: 900, y: 400 }, 'right', snapRegions, 'right'), null);
-  assert.equal(deckSnapPosition({ x: 500, y: 40 }, 'right', snapRegions), null);
+test('the edge docks while the body of the same panel swaps', () => {
+  assert.deepEqual(deckDropTarget({ x: 100, y: 350 }, 'recorder', snapRegions, 'timeline'), { kind: 'dock', position: 'left' });
+  assert.deepEqual(deckDropTarget({ x: 500, y: 350 }, 'recorder', snapRegions, 'timeline'), { kind: 'swap', panel: 'timeline' });
+  assert.equal(deckDropTarget({ x: 500, y: 350 }, 'recorder', snapRegions, 'recorder'), null);
+  assert.equal(deckDropTarget({ x: 500, y: 40 }, 'recorder', snapRegions), null);
 });
