@@ -55,20 +55,24 @@
 .studio-eyebrow { font-size: 10px; letter-spacing: 1.5px; color: var(--muted); }
 .studio-song-meta { margin: 0 0 10px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .studio-transport { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.studio-workspace-jumps { display: none; }
-.studio-tools {
-  display: flex;
+.studio-tools { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.studio-body {
+  display: grid;
   flex: 1;
-  flex-direction: column;
+  grid-template-columns: minmax(0, 1fr) 335px;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  container-type: size;
+}
+.studio-song,.studio-capture-options {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scroll-padding-block: 10px;
 }
-.studio-body { flex: 1 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) 335px; }
 .studio-song { padding: 24px 28px; min-width: 0; }
-.studio-tools:focus-visible,.studio-song:focus-visible,.studio-capture:focus-visible,.timeline-scroll:focus-visible { outline: 2px solid #8c7349; outline-offset: -3px; }
+.studio-song:focus-visible,.studio-capture:focus-visible,.studio-capture-options:focus-visible,.timeline-scroll:focus-visible { outline: 2px solid #8c7349; outline-offset: -3px; }
 .studio-jog-wheel { touch-action: none; user-select: none; cursor: grab; }
 .studio-jog-wheel:active { cursor: grabbing; }
 .studio-jog-wheel[aria-disabled=true] { cursor: default; }
@@ -104,11 +108,15 @@
 .studio-track-controls .studio-download { display: flex; align-items: center; gap: 5px; margin-left: auto; border: none; }
 .studio-add { display: flex; width: 100%; align-items: center; justify-content: center; gap: 9px; padding: 16px; color: #536e43; font-size: 12px; border-bottom: 1px solid var(--line); }
 .studio-notice { font-size: 12px; display: flex; align-items: center; gap: 7px; color: #536e43; }
-.studio-capture { padding: 22px 24px; background: #fafbf6; border-left: 1px solid var(--line); min-width: 0; }
+.studio-capture { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: #fafbf6; border-left: 1px solid var(--line); }
+.studio-capture-bar { display: grid; flex: none; gap: 12px; padding: 18px 24px 14px; border-bottom: 1px solid var(--line); }
 .studio-capture-heading { display: flex; align-items: center; gap: 12px; }
 .studio-mic-icon { height: 42px; width: 42px; display: grid; place-items: center; background: #e8eddf; border: 1px solid #d7dfce; border-radius: 13px; }
 .studio-capture h2 { font: 500 20px 'Manrope',var(--font); letter-spacing: -.6px; margin: 0; }
-.studio-capture-intro { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 10px 0; }
+.capture-position { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.3; }
+.capture-position time { color: #536447; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.studio-capture-options { padding: 12px 24px 22px; }
+.studio-capture-toggle { display: none; }
 .studio-field { display: flex; flex-direction: column; gap: 8px; font-size: 11px; color: #5b6651; margin: 16px 0; }
 .studio-field input,.studio-field select { background: #f1f4eb; border: 1px solid #d1dac8; border-radius: 8px; padding: 10px; color: var(--ink); font: 13px var(--font); min-width: 0; width: 100%; }
 .studio-field select:focus-visible,.studio-tempo input:focus-visible { outline: 3px solid #977543; outline-offset: 3px; }
@@ -131,14 +139,12 @@
 .studio-input-meter i { display: block; height: 100%; background: #769462; transition: width .06s linear; }
 .studio-input-meter.clipping i { background: #b56751; }
 .studio-input small { display: block; font-size: 10px; line-height: 1.6; color: var(--muted); }
-.studio-record-action { width: 100%; margin-top: 4px; }
 .studio-disconnect { display: flex; margin: 14px auto 0; }
 .studio-live { margin: 20px 0 0; padding: 12px; border: 1px solid #d4b8a8; background: #f5eae1; border-radius: 9px; }
 .studio-live>span { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #904d3b; margin-bottom: 12px; }
 .studio-live>span>i { width: 6px; height: 6px; border-radius: 50%; background: #a05c46; }
 .studio-live time { margin-left: auto; font-variant-numeric: tabular-nums; }
 .studio-live .waveform i { max-width: none; }
-.studio-countdown { font-size: 22px; text-align: center; margin: 20px 0 0; }
 .studio-take { margin-top: 22px; padding: 16px 0; border-top: 1px solid var(--line); }
 .studio-take>div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
 .studio-take strong { font-weight: 500; overflow-wrap: anywhere; }.studio-take time { font-size: 11px; color: var(--muted); }
@@ -164,10 +170,17 @@
   .studio-project input { font-size: 16px; }
   .studio-playback { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 10px 18px 4px; }
   .studio-song-top { gap: 18px; }
-  .studio-workspace-jumps { display: flex; gap: 6px; }
-  .studio-body { grid-template-columns: minmax(0, 1fr); }
-  .studio-song,.studio-capture { padding: 18px; }
+  .studio-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .studio-song { padding: 18px; }
   .studio-capture { border-left: 0; border-top: 1px solid var(--line); }
+  .studio-capture-bar { grid-template-columns: minmax(0, 1fr) fit-content(47%) auto; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 0; }
+  .studio-capture h2 { font-size: 14px; letter-spacing: -.25px; }
+  .studio-capture .studio-mic-icon { display: none; }
+  .studio-record-action { gap: 6px; padding: 8px 10px; font-size: 12px; }
+  .studio-capture-toggle { display: inline-flex; min-width: 38px; min-height: 38px; border: 1px solid #d3ddca; }
+  .studio-capture-toggle[aria-expanded=true] { background: #e8eddf; }
+  .studio-capture-options { display: none; order: -1; max-height: min(255px, 42cqh); padding: 10px 16px 16px; border-bottom: 1px solid var(--line); }
+  .studio-capture-options[data-expanded=true] { display: block; }
   .studio-empty { padding: 32px 0; }
 }
 @media (max-width: 480px) {
@@ -186,7 +199,11 @@
 }
 @media (max-height: 430px) {
   .studio-desk { overflow: auto; overscroll-behavior: contain; }
-  .studio-tools { flex: none; overflow: visible; }
+  .studio-tools { min-height: min(150px, 65dvh); }
+  .studio-capture-bar { padding-block: 8px; gap: 8px; }
+}
+@media (560px <= width <= 760px) and (max-height: 430px) {
+  .studio-playback { grid-template-columns: minmax(0, 1fr) minmax(110px, 38%); }
 }
 @media(pointer:coarse) { .studio-app button { min-height: 44px; }.studio-app input:not([type=checkbox]):not([type=range]),.studio-app select { font-size: 16px; }.studio-check { min-height: 44px; }.studio-track-controls { gap: 8px; } }
 @media(prefers-reduced-motion:reduce) { .studio-track { animation: none; }.studio-input-meter i { transition: none; } }
@@ -277,7 +294,7 @@
 .timeline-trim { position:absolute; top:0; height:100%; width:12px; transform:translateX(-50%); z-index:2; cursor:ew-resize; touch-action:none; border-left:3px solid #536d3d; border-right:3px solid transparent; background:transparent; }
 .timeline-trim-out { border-left:3px solid transparent; border-right:3px solid #536d3d; }.timeline-row .studio-playhead { z-index:3; background:#9c6846; pointer-events:none; }
 .timeline-draft .timeline-label { color:#8a6343; }.timeline-draft .clip-body { background:#ebe2cc; border-color:#b69c74; }.timeline-draft .timeline-waveform { fill:#9b7d51; }.timeline-muted .clip-body { opacity:.35; }
-.timeline-empty { text-align:center; padding:24px; font-size:12px; color:var(--muted); }.capture-position { padding:12px; border:1px solid #d0dac4; border-radius:8px; font-size:11px; line-height:1.6; color:#536447; }.capture-position strong { display:block; font-size:18px; font-weight:500; font-variant-numeric:tabular-nums; }.capture-position small { display:block; font-size:10px; margin-top:5px; }
+.timeline-empty { text-align:center; padding:24px; font-size:12px; color:var(--muted); }
 .timeline-toolbar button:focus-visible,.timeline-toolbar select:focus-visible,.timeline-ruler input:focus-visible { outline:3px solid #9b7746; outline-offset:2px; }
 @media(max-width:500px) { .timeline-row { grid-template-columns:76px minmax(0,1fr); padding-right:10px; }.timeline-label { font-size:10px; padding:10px 6px; }.timeline-label small { font-size:7px; }.timeline-ticks span:nth-child(even) { display:none; } }
 
