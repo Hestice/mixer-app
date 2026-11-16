@@ -1,3 +1,4 @@
+import { lifecycle, type Lifecycle } from './library-entry';
 import { validRecordArt } from './record-art';
 import type { Layer, RecordingTake } from './session';
 import type { SavedSong, SongContent } from './song-store';
@@ -49,7 +50,7 @@ export async function makeManifest(song: SavedSong, ownerId: string, upload: (pa
   for (const layer of song.layers) layers.push(await convert(layer));
   const candidate = song.candidate ? await convert(song.candidate) : null;
   return { version: 2, title: recovered ? `${song.title} · Recovered version` : song.title,
-    artwork: song.artwork, layers, candidate, retakeLayerId: song.retakeLayerId, withDemo: song.withDemo, volume: song.volume, partName: song.partName,
+    artwork: song.artwork, archivedAt: song.archivedAt, deletedAt: song.deletedAt, layers, candidate, retakeLayerId: song.retakeLayerId, withDemo: song.withDemo, volume: song.volume, partName: song.partName,
     tempo: song.tempo, countIn: song.countIn, metronomeMode: song.metronomeMode };
 }
 
@@ -60,6 +61,12 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
     || typeof manifest.countIn !== 'boolean' || typeof manifest.withDemo !== 'boolean'
     || !['off', 'visual', 'sound'].includes(manifest.metronomeMode)) throw new Error('This song uses an unsupported format. Your local copy was not changed.');
   if (manifest.artwork !== undefined && !validRecordArt(manifest.artwork)) throw new Error('The record artwork is invalid. Your local copy was not changed.');
+  function validateLifecycle(entry: Lifecycle) {
+    for (const date of [entry.archivedAt, entry.deletedAt]) {
+      if (date != null && (!Number.isSafeInteger(date) || date <= 0)) throw new Error('An archive date is invalid.');
+    }
+  }
+  validateLifecycle(manifest);
   function validateEdits(take: { duration?: number; trimStart?: number; trimEnd?: number; startAt?: number }) {
     const duration = take.duration ?? 80 / 7;
     if (!Number.isFinite(duration) || duration <= 0 || (take.startAt !== undefined && (!Number.isFinite(take.startAt) || take.startAt < 0 || take.startAt > 3600))
@@ -75,6 +82,7 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
     if (!layer || typeof layer.id !== 'string' || typeof layer.name !== 'string'
       || typeof layer.enabled !== 'boolean' || !Number.isFinite(layer.volume)
       || !['recording', 'guitar', 'keys', 'rhythm', 'harmony'].includes(layer.kind)) throw new Error('A cloud layer is invalid.');
+    validateLifecycle(layer);
     validateEdits(layer);
     if (layer.recorded) {
       validateAudio(layer.audio);
@@ -86,7 +94,7 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
       }
     }
   }
-  if (manifest.retakeLayerId !== undefined && (!manifest.candidate || !manifest.layers.some((layer) => layer.id === manifest.retakeLayerId))) throw new Error('A retake reference is invalid.');
+  if (manifest.retakeLayerId !== undefined && (!manifest.candidate || !manifest.layers.some((layer) => layer.id === manifest.retakeLayerId && lifecycle(layer) === 'active'))) throw new Error('A retake reference is invalid.');
   const fetched = new Map<string, Blob>();
   async function restoreTake(take: CloudTake): Promise<RecordingTake> {
     const { audio, ...rest } = take;
@@ -108,7 +116,7 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
   }
   const layers: Layer[] = [];
   for (const layer of manifest.layers) layers.push(await restore(layer));
-  return { artwork: manifest.artwork, title: manifest.title, layers, candidate: manifest.candidate ? await restore(manifest.candidate) : null, retakeLayerId: manifest.retakeLayerId,
+  return { artwork: manifest.artwork, archivedAt: manifest.archivedAt, deletedAt: manifest.deletedAt, title: manifest.title, layers, candidate: manifest.candidate ? await restore(manifest.candidate) : null, retakeLayerId: manifest.retakeLayerId,
     withDemo: manifest.withDemo, volume: manifest.volume, partName: manifest.partName,
     tempo: manifest.tempo, countIn: manifest.countIn, metronomeMode: manifest.metronomeMode };
 }

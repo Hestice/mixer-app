@@ -1,3 +1,4 @@
+import type { Lifecycle } from './library-entry';
 import demoPeaks from './demo-peaks.json';
 import { layerReveal, STORY_BOUNDARIES } from './story-motion';
 
@@ -9,7 +10,7 @@ export interface RecordingTake extends ClipEdits {
   peaks?: number[];
   duration: number;
 }
-export interface Layer extends ClipEdits {
+export interface Layer extends ClipEdits, Lifecycle {
   id: string;
   name: string;
   kind: LayerKind;

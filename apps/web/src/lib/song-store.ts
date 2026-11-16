@@ -1,10 +1,12 @@
 import { storeRecordingContent, restoreRecordingContent, hasLegacyRecordings, RecordingReadError, type StoredSong } from './recording-storage';
 import type { RecordArt } from './record-art';
+import type { BackupLink } from './backup-store';
+import { libraryEdit, lifecycle, type LibraryAction, type Lifecycle } from './library-entry';
 import { clipBounds } from './clip-edits';
 import type { Layer } from './session';
 import type { MetronomeMode } from './metronome';
 
-export interface SongContent {
+export interface SongContent extends Lifecycle {
   artwork?: RecordArt;
   title: string;
   retakeLayerId?: string;
@@ -24,7 +26,7 @@ export interface SavedSong extends SongContent {
   createdAt: number;
   updatedAt: number;
 }
-export interface SongSummary {
+export interface SongSummary extends Lifecycle {
   artwork?: RecordArt;
   id: string;
   ownerId?: string;
@@ -82,11 +84,13 @@ export async function getSong(id: string) {
   return song ? restoreRecordingContent(song) : undefined;
 }
 /** Protect old recordings before waveform decoding or any further edits. This is a storage change, not a song revision. */
-export async function openLocalSong(id: string, ownerId?: string): Promise<{ song?: SavedSong; audioError?: RecordingReadError; protectionError?: unknown; ownerMismatch?: boolean }> {
+export async function openLocalSong(id: string, ownerId?: string, allowInactive = false): Promise<{ song?: SavedSong; audioError?: RecordingReadError; protectionError?: unknown; ownerMismatch?: boolean; unavailable?: 'archived' | 'deleted' }> {
   for (;;) {
     const raw = await readLocal<StoredSong | undefined>('songs', id);
     if (!raw) return {};
     if (raw.ownerId && raw.ownerId !== ownerId) return { ownerMismatch: true };
+    const state = lifecycle(raw);
+    if (!allowInactive && state !== 'active') return { unavailable: state };
     const song = restoreRecordingContent(raw);
     if (!hasLegacyRecordings(raw)) return { song };
     let protectedSong: StoredSong;
@@ -123,6 +127,45 @@ export async function listSongs() {
   return (await readLocal<SongSummary[]>('summaries')).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+// Library operations only update metadata, including for recordings that need audio recovery.
+export async function updateSavedSong(id: string, expectedRevision: number, ownerId: string | undefined, action: LibraryAction) {
+  const db = await openDatabase();
+  return new Promise<SongSummary>((resolve, reject) => {
+    const tx = db.transaction(['songs', 'summaries', 'backups'], 'readwrite');
+    const songs = tx.objectStore('songs');
+    const backups = tx.objectStore('backups');
+    const request = songs.get(id);
+    let summary: SongSummary;
+    let failure: unknown;
+    request.onsuccess = () => {
+      const song = request.result as StoredSong | undefined;
+      try {
+        if (!song || song.ownerId && song.ownerId !== ownerId) throw new Error('This song is unavailable on this device.');
+        if (song.revision !== expectedRevision) throw new SongConflictError();
+        const patch = libraryEdit(song, action);
+        const next = { ...song, ...patch, revision: song.revision + 1, updatedAt: Date.now() };
+        songs.put(next);
+        summary = summarizeSong(next);
+        tx.objectStore('summaries').put(summary);
+        const binding = backups.get(id);
+        binding.onsuccess = () => {
+          const link = binding.result as BackupLink | undefined;
+          if (!link) return;
+          try {
+            backups.put({ ...link, libraryEdit: {
+              baseRevision: link.libraryEdit?.baseRevision ?? song.revision,
+              revision: next.revision,
+              patch: { ...link.libraryEdit?.patch, ...patch },
+            } } satisfies BackupLink);
+          } catch (reason) { failure = reason; tx.abort(); }
+        };
+      } catch (reason) { failure = reason; tx.abort(); }
+    };
+    tx.oncomplete = () => { db.close(); songChanged(); resolve(summary); };
+    tx.onabort = () => { db.close(); reject(failure ?? tx.error); };
+  });
+}
+
 // Audio, review state and the library entry commit together. A successful put alone
 // is not enough: the UI must wait for the transaction's complete event.
 export async function saveSong(id: string, revision: number, content: SongContent, creationOwner?: string): Promise<SavedSong> {
@@ -136,12 +179,12 @@ export async function saveSong(id: string, revision: number, content: SongConten
     const request = store.get(id);
     request.onsuccess = () => {
       const previous = request.result as SavedSong | undefined;
-      if ((previous?.revision ?? 0) !== revision) {
+      if ((previous?.revision ?? 0) !== revision || previous && lifecycle(previous) !== 'active') {
         failure = new SongConflictError(); transaction.abort(); return;
       }
       try {
         const now = Date.now();
-        saved = { ...content, ownerId: previous ? previous.ownerId : creationOwner, id, revision: revision + 1, createdAt: previous?.createdAt ?? now, updatedAt: now };
+        saved = { ...content, archivedAt: previous?.archivedAt, deletedAt: previous?.deletedAt, ownerId: previous ? previous.ownerId : creationOwner, id, revision: revision + 1, createdAt: previous?.createdAt ?? now, updatedAt: now };
         store.put({ ...saved, layers: stored.layers, candidate: stored.candidate });
         const summary = summarizeSong(saved);
         transaction.objectStore('summaries').put(summary);
@@ -175,10 +218,11 @@ export class SongWriter {
 }
 
 export function summarizeSong(song: SavedSong): SongSummary {
-  return { id: song.id, ownerId: song.ownerId, createdAt: song.createdAt, revision: song.revision,
+  const layers = song.layers.filter(layer => lifecycle(layer) === 'active');
+  return { id: song.id, archivedAt: song.archivedAt, deletedAt: song.deletedAt, ownerId: song.ownerId, createdAt: song.createdAt, revision: song.revision,
     artwork: song.artwork, title: song.title.trim() || 'Untitled song', updatedAt: song.updatedAt,
-    layerCount: song.layers.length, hasTake: !!song.candidate,
-    duration: Math.max(0, ...song.layers.map((layer) => clipBounds(layer).end), song.candidate ? clipBounds(song.candidate).end : 0) };
+    layerCount: layers.length, hasTake: !!song.candidate,
+    duration: Math.max(0, ...layers.map((layer) => clipBounds(layer).end), song.candidate ? clipBounds(song.candidate).end : 0) };
 }
 
 export function songChanged() {

@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getSong, listSongs, saveSong, SongWriter, SongConflictError, storageMessage, type SongContent } from './song-store';
+import { getSong, listSongs, openLocalSong, saveSong, updateSavedSong, SongWriter, SongConflictError, storageMessage, type SongContent } from './song-store';
 import { encodeWav } from './wav';
 
 const song = (): SongContent => ({ title: 'Evening idea', layers: [], candidate: null, withDemo: false, volume: .6, partName: 'Vocals', tempo: 96, countIn: false, metronomeMode: 'visual' });
@@ -75,4 +75,40 @@ test('failed writes leave the previous song and library entry intact; retry reco
 
 test('missing songs do not become empty replacements', async () => {
   assert.equal(await getSong(crypto.randomUUID()), undefined);
+});
+
+test('library archive and delete retain every local recording and prevent stale studios from editing', async () => {
+  const id = crypto.randomUUID(), layer = take();
+  const saved = await saveSong(id, 0, { ...song(), layers: [layer], candidate: take() });
+  await assert.rejects(updateSavedSong(id, saved.revision, undefined, { type: 'delete' }), /changed/);
+  const renamed = await updateSavedSong(id, saved.revision, undefined, { type: 'rename', title: ' New name ' });
+  await assert.rejects(new SongWriter(id, saved.revision).write(song()), SongConflictError);
+  const archived = await updateSavedSong(id, renamed.revision, undefined, { type: 'archive' });
+  assert.equal((await openLocalSong(id)).unavailable, 'archived');
+  const restored = await updateSavedSong(id, archived.revision, undefined, { type: 'restore' });
+  assert.equal((await openLocalSong(id)).song?.title, 'New name');
+  const rearchived = await updateSavedSong(id, restored.revision, undefined, { type: 'archive' });
+  const deleted = await updateSavedSong(id, rearchived.revision, undefined, { type: 'delete' });
+  await assert.rejects(updateSavedSong(id, deleted.revision, undefined, { type: 'restore' }), /changed/);
+  assert.equal((await openLocalSong(id)).unavailable, 'deleted');
+  const retained = (await getSong(id))!;
+  assert.ok(retained.deletedAt);
+  assert.deepEqual(await retained.layers[0].blob!.arrayBuffer(), await layer.blob.arrayBuffer());
+  assert.deepEqual(await retained.candidate!.blob!.arrayBuffer(), await saved.candidate!.blob!.arrayBuffer());
+});
+
+test('song summaries exclude inactive layers while autosave retains their recordings', async () => {
+  const id = crypto.randomUUID(), archive = take(), deleted = take(), current = take(), now = Date.now();
+  await saveSong(id, 0, { ...song(), layers: [
+    { ...archive, archivedAt: now, startAt: 42 },
+    { ...deleted, archivedAt: now, deletedAt: now, startAt: 80 },
+    current,
+  ] });
+  const summary = (await listSongs()).find(item => item.id === id)!;
+  assert.equal(summary.layerCount, 1);
+  assert.equal(summary.duration, current.duration);
+  const reopened = (await openLocalSong(id)).song!;
+  assert.equal(reopened.layers.length, 3);
+  assert.ok(reopened.layers[1].deletedAt);
+  assert.deepEqual(await reopened.layers[1].blob!.arrayBuffer(), await deleted.blob.arrayBuffer());
 });

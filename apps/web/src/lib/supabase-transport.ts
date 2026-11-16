@@ -52,10 +52,11 @@ export function supabaseTransport(client: SupabaseClient, ownerId: string, activ
 }
 
 export function cloudMessage(reason: unknown) {
+  if (reason instanceof CloudConflictError) return 'This song changed. Refresh My songs and try again.';
   if (reason instanceof RecordingReadError) return reason.message;
   const detail = reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : '';
   if (/newer app version/i.test(detail)) return 'This song was edited in a newer app version. Reload the app before backing up again.';
-  if (/50 MB|missing|unsupported|invalid|completely|changed locally/.test(detail)) return detail;
+  if (/50 MB|missing|unsupported|invalid|completely|changed locally|changed\. Refresh|archiv|has been deleted/.test(detail)) return detail;
   if (/fetch|network|offline/i.test(detail)) return 'Connection interrupted. Your local save is safe; backup will retry when you reconnect.';
   return 'Cloud backup could not finish. Your local save is safe. Check the connection and try again.';
 }

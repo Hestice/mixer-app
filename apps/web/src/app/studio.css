@@ -253,3 +253,31 @@
 [data-record-flight=studio] { overflow-x: clip; }
 [data-record-flight=studio] .studio-app:not([data-song-collection], [data-record-docking]) { visibility: hidden; }
 [data-record-flight=studio] .studio-app:not([data-record-docking=seated]) [data-studio-record] .custom-vinyl { visibility: hidden; }
+
+.library-tabs { display: inline-flex; gap: 4px; padding: 3px; margin: 8px 0; border: 1px solid var(--line); border-radius: 24px; }
+.library-tabs button { padding: 7px 16px; border-radius: 20px; font-size: 12px; color: var(--muted); }
+.library-tabs button[aria-pressed=true] { color: var(--ink); background: #e0e7d8; }
+.library-manage { padding: 6px; white-space: nowrap; font-size: 11px; }
+.song-manage { flex-shrink: 0; }
+.archived-song { cursor: default; }
+.layer-archive { margin: 18px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; color: var(--muted); }
+.layer-archive summary { cursor: pointer; }
+.layer-archive summary span { margin-left: 6px; font-variant-numeric: tabular-nums; }
+.layer-archive ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.layer-archive li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; }
+.library-dialog { width: min(420px, calc(100% - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 20px; color: var(--ink); background: var(--paper); box-shadow: 0 18px 60px #18241545; }
+.library-dialog::backdrop { background: #202b2355; backdrop-filter: blur(8px); }
+.library-dialog-body { padding: 24px; }
+.library-dialog h2 { margin: 0 0 18px; font: 500 22px 'Manrope', var(--font); }
+.library-dialog p { line-height: 1.6; overflow-wrap: anywhere; }
+.library-dialog label { display: block; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+.library-name-edit { display: flex; gap: 8px; }
+.library-name-edit input { flex: 1; min-width: 0; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; background: #fafbf6; color: var(--ink); }
+.library-dialog-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.library-delete-link { color: #8b4037; }
+.library-delete { color: white; background: #8b4037; }
+@media (max-width: 500px) {
+  .song-select-row:has(.song-manage) { flex-wrap: wrap; column-gap: 8px; row-gap: 0; border-bottom: 1px solid var(--line); }
+  .song-select-row:has(.song-manage) .song-card { border-bottom: 0; padding-bottom: 6px; }
+  .song-select-row:has(.song-manage) .song-manage { margin: 0 0 8px auto; flex-basis: 100%; text-align: right; }
+}

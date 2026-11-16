@@ -11,14 +11,16 @@ import { Waveform } from './waveform';
 import { useRecordNavigation } from './record-transition';
 import { RecordDisc } from './record-artwork';
 import { RecordCustomizer } from './record-customizer';
+import { LibraryDialog } from './library-dialog';
+import { lifecycle } from '../lib/library-entry';
 import { SongTimeline, preciseTime } from './song-timeline';
 import '../app/studio.css';
 
-function Track({ layer, studio, span }: { layer: Layer; studio: Studio; span: number }) {
+function Track({ layer, studio, span, manage }: { layer: Layer; studio: Studio; span: number; manage(): void }) {
   const duration = clipBounds(layer).length;
   const audible = studio.soloId ? studio.soloId === layer.id : layer.enabled;
   return <article className={`studio-track ${audible ? '' : 'is-muted'}`} aria-label={`${layer.name} layer`}>
-    <div className="studio-track-head"><span className={`layer-color ${layer.kind}-color`} /><h3>{layer.name}</h3><time>{timeLabel(duration)}</time></div>
+    <div className="studio-track-head"><span className={`layer-color ${layer.kind}-color`} /><h3>{layer.name}</h3><button className="text-button library-manage" aria-label={`Manage ${layer.name}`} disabled={studio.locked || studio.busy || studio.retakeLayerId === layer.id} onClick={manage}>Manage</button><time>{timeLabel(duration)}</time></div>
     <TakePicker layer={layer} studio={studio} />
     <ClipEditor layer={layer} studio={studio} span={span} detailsOnly />
     <div className="studio-track-controls">
@@ -35,6 +37,8 @@ function Track({ layer, studio, span }: { layer: Layer; studio: Studio; span: nu
 export function RecordingConsole({ studio }: { studio: Studio }) {
   const { title, setTitle } = studio;
   const { arrive, flight, finish, returnToSongs, rememberArtwork } = useRecordNavigation();
+  const [managingLayer, setManagingLayer] = useState<string | null>(null);
+  const managedLayer = [...studio.layers, ...studio.archivedLayers].find(layer => layer.id === managingLayer);
   const [notice, setNotice] = useState('');
   const [customizing,setCustomizing]=useState(false);
   const recordButton = useRef<HTMLButtonElement>(null);
@@ -77,6 +81,10 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   if (!studio.localReady) return <div className="studio-app"><main className="songs-page studio-loading"><span className="studio-eyebrow">LISTENING ROOM</span><h1>{studio.loadError ? 'Could not open this song' : 'Opening your song…'}</h1><p role={studio.loadError ? 'alert' : 'status'}>{studio.loadError || 'Bringing your layers back to the desk.'}</p>{studio.loadError && <div className="songs-actions"><button className="button button-primary" onClick={() => window.location.reload()}>Try again</button><a className="button button-secondary" href="/songs">My songs</a></div>}</main></div>;
 
   return <div className="studio-app">
+    {managedLayer && <LibraryDialog kind="layer" title={managedLayer.name} archived={lifecycle(managedLayer) === 'archived'} onClose={() => setManagingLayer(null)} onAction={action => {
+      if (action.type === 'rename') studio.renameLayer(managedLayer.id, action.title);
+      else studio.manageLayer(managedLayer.id, action.type);
+    }} />}
     {customizing && <RecordCustomizer title={title} artwork={studio.artwork} onClose={()=>setCustomizing(false)} onDone={art=>{studio.setArtwork(art);setCustomizing(false);setNotice('Record appearance saved.');}} />}
     <a className="skip-link" href="#studio-capture">Skip to recording controls</a>
     <header className="studio-header"><span className="wordmark"><span className="brand-icon" aria-hidden="true"><i /><i /><i /><i /></span>listening room.</span><button className="text-button studio-library-link" disabled={studio.locked || studio.busy} onClick={() => void studio.openMySongs(() => returnToSongs(studio.songId, studio.artwork))}>My songs <span aria-hidden="true">↗</span></button></header>
@@ -93,8 +101,12 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
           </div>
           <div className="studio-layers-heading"><h2>Layers in your song</h2><span>Record freely · No looping</span></div>
           <SongTimeline studio={studio} span={span} />
-          <div className="studio-tracks">{studio.layers.map((layer) => <Track key={layer.id} layer={layer} studio={studio} span={span} />)}</div>
+          <div className="studio-tracks">{studio.layers.map((layer) => <Track key={layer.id} layer={layer} studio={studio} span={span} manage={() => setManagingLayer(layer.id)} />)}</div>
           {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={state !== 'idle' || studio.busy} onClick={firstLayer}><Mic size={17} />Record your first layer</button></div>}
+          {!!studio.archivedLayers.length && <details className="layer-archive">
+            <summary>Archived layers <span>{studio.archivedLayers.length}</span></summary>
+            <ul>{studio.archivedLayers.map(layer => <li key={layer.id}><span>{layer.name}</span><button className="text-button library-manage" aria-label={`Manage archived ${layer.name}`} disabled={studio.locked || studio.busy || studio.retakeLayerId === layer.id} onClick={() => setManagingLayer(layer.id)}>Manage</button></li>)}</ul>
+          </details>}
           {!!studio.layers.length && <button className="studio-add" disabled={studio.locked || studio.busy || !!studio.candidate} onClick={() => { recordButton.current?.focus(); recordButton.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); if (state === 'idle') void studio.enableMicrophone(); }}><Plus size={16} />Add another layer</button>}
           <div className="studio-song-bottom"><label>Song volume<input type="range" min="0" max="1" step=".01" value={studio.volume} aria-label="Song volume" onChange={(event) => studio.setVolume(Number(event.target.value))} /></label><span>All parts share the song timeline. Volume and take choices are below.</span></div>
           {!!studio.layers.length && <div className="studio-export">
