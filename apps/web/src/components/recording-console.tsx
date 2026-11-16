@@ -44,6 +44,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   const { title, setTitle } = studio;
   const { arrive, flight, finish, returnToSongs, rememberArtwork } = useRecordNavigation();
   const [notice, setNotice] = useState('');
+  const [compact, setCompact] = useState(false);
   const [customizing,setCustomizing]=useState(false);
   const recordButton = useRef<HTMLButtonElement>(null);
   const [captureOptions, setCaptureOptions] = useState<boolean | null>(null);
@@ -102,7 +103,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   return <div className="studio-app studio-workspace">
     {customizing && <RecordCustomizer title={title} artwork={studio.artwork} onClose={()=>setCustomizing(false)} onDone={art=>{studio.setArtwork(art);setCustomizing(false);setNotice('Record appearance saved.');}} />}
     <a className="skip-link" href="#studio-capture" onClick={event => { event.preventDefault(); revealRecording(); }}>Skip to recording controls</a>
-    <main className="studio-desk" aria-label="Recording console">
+    <main className="studio-desk" data-compact={compact} aria-label="Recording console">
       <header className="studio-project">
         <button className="studio-toolbar-button studio-library-link" disabled={studio.locked || studio.busy} onClick={() => void studio.openMySongs(() => returnToSongs(studio.songId, studio.artwork))}><ArrowLeft size={16} aria-hidden="true" />My songs</button>
         <div className="studio-project-name">
@@ -126,9 +127,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
         {studio.saveError && <div className="studio-save-error" role="alert"><p>{studio.saveError}</p><button className="text-button" onClick={() => void studio.retrySave()}>Retry save</button></div>}
         {studio.cloudStatus && <div className="studio-cloud-status" role="status"><span>{studio.cloudStatus}</span>{studio.cloudError && <><p>{studio.cloudError}</p><button className="text-button" onClick={studio.retryCloud}>Retry backup</button></>}</div>}
         <div className="studio-body">
-          <section className="studio-song" tabIndex={0} aria-labelledby="studio-layers-title">
-            <div className="studio-layers-heading"><h2 id="studio-layers-title">Layers in your song</h2></div>
-            <SongTimeline studio={studio} span={span} />
+          <SongTimeline studio={studio} span={span} compact={compact} onToggleCompact={() => setCompact(value => !value)}>
             <div className="studio-tracks">{studio.layers.map((layer) => <Track key={layer.id} layer={layer} studio={studio} span={span} />)}</div>
             {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={state !== 'idle' || studio.busy} onClick={addLayer}><Mic size={17} />Record your first layer</button></div>}
             {!!studio.archivedLayers.length && <details className="layer-archive">
@@ -137,7 +136,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
             </details>}
             {!!studio.layers.length && <button className="studio-add" disabled={studio.locked || studio.busy || !!studio.candidate} onClick={addLayer}><Plus size={16} />Add another layer</button>}
             {notice && <p className="studio-notice" role="status"><Check size={15} />{notice}</p>}
-          </section>
+          </SongTimeline>
 
           <aside className="studio-capture" id="studio-capture" ref={recordingPanel} tabIndex={-1} aria-labelledby="capture-title">
             <div className="studio-capture-bar">
