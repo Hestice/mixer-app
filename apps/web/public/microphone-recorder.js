@@ -3,6 +3,8 @@ class MicrophoneRecorder extends AudioWorkletProcessor {
   constructor() {
     super();
     this.startFrame = Infinity;
+    this.endFrame = Infinity;
+    this.firstFrame = null;
     this.takeId = 0;
     this.recording = false;
     this.chunk = new Float32Array(4096);
@@ -12,18 +14,23 @@ class MicrophoneRecorder extends AudioWorkletProcessor {
     this.port.onmessage = ({ data }) => {
       if (data.type === 'start') {
         this.startFrame = data.frame;
+        this.endFrame = data.endFrame ?? Infinity;
+        this.firstFrame = null;
         this.takeId = data.takeId;
         this.recording = true;
         this.used = 0;
       } else if (data.type === 'stop') {
-        this.recording = false;
-        this.flush();
-        this.port.postMessage({ type: 'done', takeId: this.takeId });
+        this.finish();
       } else if (data.type === 'cancel') {
         this.recording = false;
         this.used = 0;
       }
     };
+  }
+  finish() {
+    this.recording = false;
+    this.flush();
+    this.port.postMessage({ type: 'done', takeId: this.takeId, firstFrame: this.firstFrame });
   }
   flush() {
     if (!this.used) return;
@@ -42,7 +49,10 @@ class MicrophoneRecorder extends AudioWorkletProcessor {
         sample /= channels.length;
       }
       this.levelPeak = Math.max(this.levelPeak, Math.abs(sample));
-      if (this.recording && currentFrame + i >= this.startFrame) {
+      const frame = currentFrame + i;
+      if (this.recording && frame >= this.endFrame) this.finish();
+      if (this.recording && frame >= this.startFrame) {
+        this.firstFrame ??= frame;
         this.chunk[this.used++] = sample;
         if (this.used === this.chunk.length) this.flush();
       }

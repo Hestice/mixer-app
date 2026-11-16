@@ -35,10 +35,28 @@ test('microphone worklet starts on the scheduled frame and outputs silence', () 
   assert.deepEqual(Array.from(messages.find((message) => message.type === 'samples').samples), Array(5).fill(.25), 'count-in audio before the scheduled start is excluded');
   assert.equal(messages.at(-1).type, 'done');
   assert.equal(messages.at(-1).takeId, 1);
+  assert.equal(messages.at(-1).firstFrame, 3);
   messages.length = 0;
   scope.currentFrame = 8;
   processor.process([[new Float32Array(8).fill(.5)]], [[output]]);
   assert.equal(messages.some((message) => message.type === 'samples'), false, 'stopped capture cannot add more audio');
+});
+
+test('calibration auto-stops on its scheduled end frame without a UI timer', () => {
+  let Processor: any;
+  const messages: any[] = [];
+  const scope = {
+    currentFrame: 128, sampleRate: 48000,
+    AudioWorkletProcessor: class { port = { onmessage: null, postMessage: (message: any) => messages.push(message) }; },
+    registerProcessor: (_: string, value: any) => { Processor = value; },
+  };
+  runInNewContext(readFileSync(new URL('../../public/microphone-recorder.js', import.meta.url), 'utf8'), scope);
+  const processor = new Processor();
+  processor.port.onmessage({ data: { type: 'start', takeId: 1, frame: 127, endFrame: 132 } });
+  processor.process([[new Float32Array([.1, .2, .3, .4, .5])]], [[new Float32Array(5)]]);
+  assert.equal(messages[0].samples.length, 4);
+  assert.equal(messages[1].type, 'done');
+  assert.equal(messages[1].firstFrame, 128, 'use the actual capture start if the message arrived late');
 });
 
 test('canceling a count-in discards it and a new take begins with an empty buffer', () => {
@@ -58,7 +76,7 @@ test('canceling a count-in discards it and a new take begins with an empty buffe
 });
 
 test('a connected microphone can record again and ignores late messages from canceled takes', async () => {
-  type Message = { type: string; takeId?: number; value?: number; samples?: Float32Array };
+  type Message = { type: string; takeId?: number; endFrame?: number; firstFrame?: number; value?: number; samples?: Float32Array };
   const messages: Message[] = [];
   const port = {
     onmessage: null as ((event: { data: Message }) => void) | null,
@@ -70,7 +88,7 @@ test('a connected microphone can record again and ignores late messages from can
   const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
   const context = {
     audioWorklet: { addModule: async () => {} },
-    sampleRate: 48000,
+    sampleRate: 48000, currentTime: 0,
     createMediaStreamSource: () => ({ connect() {}, disconnect() {} }),
     destination: {},
   };
@@ -83,10 +101,15 @@ test('a connected microphone can record again and ignores late messages from can
   try {
     const recorder = await MicrophoneRecorder.open(context as unknown as AudioContext, stream as unknown as MediaStream, () => {}, () => {});
     const deliver = (data: Message) => port.onmessage!({ data });
+    const calibration = recorder.capture(.1, .2);
+    assert.equal(messages.at(-1)?.endFrame, 9600);
+    deliver({ type: 'samples', takeId: 1, samples: new Float32Array([.125]) });
+    deliver({ type: 'done', takeId: 1, firstFrame: 4800 });
+    assert.deepEqual(await calibration, { samples: new Float32Array([.125]), firstFrame: 4800 });
     recorder.start(1);
     const first = recorder.stop();
-    deliver({ type: 'samples', takeId: 1, samples: new Float32Array([.25]) });
-    deliver({ type: 'done', takeId: 1 });
+    deliver({ type: 'samples', takeId: 2, samples: new Float32Array([.25]) });
+    deliver({ type: 'done', takeId: 2 });
     assert.deepEqual(Array.from(await first), [.25]);
     assert.equal(stoppedTracks, 0);
 
@@ -94,12 +117,12 @@ test('a connected microphone can record again and ignores late messages from can
     recorder.cancel();
     recorder.start(3);
     const retake = recorder.stop();
-    deliver({ type: 'samples', takeId: 2, samples: new Float32Array([1]) });
-    deliver({ type: 'done', takeId: 2 });
-    deliver({ type: 'samples', takeId: 3, samples: new Float32Array([-.5]) });
+    deliver({ type: 'samples', takeId: 3, samples: new Float32Array([1]) });
     deliver({ type: 'done', takeId: 3 });
+    deliver({ type: 'samples', takeId: 4, samples: new Float32Array([-.5]) });
+    deliver({ type: 'done', takeId: 4 });
     assert.deepEqual(Array.from(await retake), [-.5]);
-    assert.deepEqual(messages.filter(message => message.type === 'start').map(message => message.takeId), [1, 2, 3]);
+    assert.deepEqual(messages.filter(message => message.type === 'start').map(message => message.takeId), [1, 2, 3, 4]);
     assert.equal(stoppedTracks, 0);
     recorder.dispose();
     assert.equal(stoppedTracks, 1);

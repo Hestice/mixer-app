@@ -8,6 +8,7 @@ import { RecordingReadError, readRecording, recordingBlob, recordingCopies, repl
 import type { RecordArt } from '../lib/record-art';
 import { OUTPUT_DELAY } from '../lib/audio-output';
 import { recordingDelay, recordedPlacement, recordingSchedule } from '../lib/recording-timing';
+import { calibrateRecording, calibrationSetup, readCalibration, sameCalibrationOutput, type CalibrationProfile } from '../lib/recording-calibration';
 import { AudioEngine } from '../lib/audio-engine';
 import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
@@ -19,6 +20,8 @@ import { getBackupPreference } from '../lib/backup-store';
 import { getSong, openLocalSong, SongWriter, storageMessage, type SongContent } from '../lib/song-store';
 
 export type RecordingState = 'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'processing' | 'review';
+
+type SavedTiming = { delay: number; persistent: boolean; outputKnown: boolean };
 
 type PlaybackOptions = {
   cue?: () => Promise<void>;
@@ -88,6 +91,13 @@ export function useStudio(startInWorkspace = false) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [inputDevice, setInputDevice] = useState('');
   const recorderRef = useRef<MicrophoneRecorder | null>(null);
+  const audioDevices = useRef<MediaDeviceInfo[]>([]);
+  const deviceQuery = useRef(0);
+  const timingProfiles = useRef(new Map<string, { profile: CalibrationProfile; persistent: boolean }>());
+  const activeCalibration = useRef<object | null>(null);
+  const [timing, setTiming] = useState<SavedTiming | null>(null);
+  const [calibrating, setCalibrating] = useState(false);
+  const [calibrationError, setCalibrationError] = useState('');
   const metronomeRef = useRef<Metronome | null>(null);
   const levelRef = useRef(0);
   const runRef = useRef(0);
@@ -264,6 +274,7 @@ export function useStudio(startInWorkspace = false) {
       clearInterval(interval);
       runRef.current++;
       updateRecording.current = updateBeat.current = null;
+      activeCalibration.current = null;
       recorderRef.current?.dispose(); recorderRef.current = null;
       metronomeRef.current?.stop();
       engineRef.current?.dispose();
@@ -577,7 +588,110 @@ export function useStudio(startInWorkspace = false) {
     };
   }
 
+  const setupFor = useCallback((recorder: MicrophoneRecorder) =>
+    calibrationSetup(recorder.device, recorder.context, audioDevices.current), []);
+
+  const savedTimingFor = useCallback((recorder: MicrophoneRecorder): SavedTiming | null => {
+    const setup = setupFor(recorder);
+    let entry = timingProfiles.current.get(setup.key);
+    if (!entry) {
+      try {
+        const profile = readCalibration(localStorage, setup);
+        if (profile) entry = { profile, persistent: true };
+      } catch { /* Calibration remains available for this session when storage is blocked. */ }
+    }
+    return entry && sameCalibrationOutput(entry.profile.outputLatency, setup.outputLatency)
+      ? { delay: entry.profile.delay, persistent: entry.persistent, outputKnown: setup.outputKnown }
+      : null;
+  }, [setupFor]);
+
+  const refreshAudioDevices = useCallback(async (recorder: MicrophoneRecorder) => {
+    const request = ++deviceQuery.current;
+    const listed = await navigator.mediaDevices.enumerateDevices().catch(() => null);
+    if (request !== deviceQuery.current || recorderRef.current !== recorder) return;
+    if (listed) {
+      audioDevices.current = listed;
+      setDevices(listed.filter(item => item.kind === 'audioinput'));
+    }
+    setTiming(savedTimingFor(recorder));
+  }, [savedTimingFor]);
+
+  useEffect(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || !microphoneLabel) return;
+    const media = navigator.mediaDevices;
+    const refresh = () => { void refreshAudioDevices(recorder); };
+    const refreshVisible = () => { if (!document.hidden) refresh(); };
+    media.addEventListener('devicechange', refresh);
+    recorder.context.addEventListener('sinkchange', refresh);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => {
+      media.removeEventListener('devicechange', refresh);
+      recorder.context.removeEventListener('sinkchange', refresh);
+      document.removeEventListener('visibilitychange', refreshVisible);
+    };
+  }, [microphoneLabel, inputDevice, refreshAudioDevices]);
+
+  function cancelCalibration() {
+    if (!activeCalibration.current) return;
+    activeCalibration.current = null;
+    recorderRef.current?.cancel();
+    setCalibrating(false);
+    setBusy(false);
+  }
+
+  async function calibrateTiming(): Promise<SavedTiming | null> {
+    const recorder = recorderRef.current;
+    if (recordingState !== 'ready' || !recorder || busy || locked || activeCalibration.current) return null;
+    const run = {};
+    activeCalibration.current = run;
+    const current = () => !disposed.current && activeCalibration.current === run && recorderRef.current === recorder;
+    setCalibrationError('');
+    setCalibrating(true);
+    setBusy(true);
+    stopMetronome();
+    pausePlayback();
+    try {
+      const context = await getEngine().ready();
+      if (!current()) return null;
+      const setup = setupFor(recorder);
+      const delay = await calibrateRecording(context, recorder);
+      if (!current()) return null;
+      const after = setupFor(recorder);
+      if (after.key !== setup.key || !sameCalibrationOutput(setup.outputLatency, after.outputLatency)) {
+        throw new Error('Audio output changed during the test. Try again with the setup you want to use.');
+      }
+      if (delay === null) {
+        throw new Error('The mic couldn’t pick up the tones clearly. Bring the headphone or speaker closer, then try again.');
+      }
+      const profile = { delay, outputLatency: after.outputLatency };
+      let persistent = false;
+      try {
+        localStorage.setItem(after.key, JSON.stringify(profile));
+        persistent = true;
+      } catch { /* Use this measurement until the studio closes. */ }
+      timingProfiles.current.set(after.key, { profile, persistent });
+      const saved = { delay, persistent, outputKnown: after.outputKnown };
+      setTiming(saved);
+      return saved;
+    } catch (reason) {
+      if (current()) {
+        setCalibrationError(reason instanceof Error ? reason.message : 'Could not measure recording timing. Try again.');
+      }
+      return null;
+    } finally {
+      if (current()) {
+        activeCalibration.current = null;
+        setCalibrating(false);
+        setBusy(false);
+      }
+    }
+  }
+
   function releaseMicrophone() {
+    cancelCalibration();
+    setTiming(null);
+    audioDevices.current = [];
     recorderRef.current?.dispose(); recorderRef.current = null;
     levelRef.current = 0; setInputLevel(0);
     setMicrophoneLabel(null);
@@ -614,11 +728,17 @@ export function useStudio(startInWorkspace = false) {
       if (disposed.current || run !== runRef.current) { recorder.dispose(); return; }
       recorderRef.current = recorder;
       setMicrophoneLabel(stream.getAudioTracks()[0]?.label || 'Connected microphone');
-      setInputDevice(stream.getAudioTracks()[0]?.getSettings().deviceId || deviceId);
-      setRecordingState('ready');
-      void navigator.mediaDevices.enumerateDevices().then((items) => {
-        if (!disposed.current && recorderRef.current === recorder) setDevices(items.filter((item) => item.kind === 'audioinput'));
-      }).catch(() => {});
+      setInputDevice(recorder.device.deviceId || deviceId);
+      setTiming(savedTimingFor(recorder));
+      // Device enumeration can wait for visibility when the Recorder is in another tab.
+      // Let a deferred result restore the profile without holding up microphone setup.
+      const refresh = refreshAudioDevices(recorder);
+      if (!document.hidden) {
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([refresh, new Promise<void>(resolve => { deadline = setTimeout(resolve, 200); })]);
+        clearTimeout(deadline);
+      }
+      if (!disposed.current && run === runRef.current && recorderRef.current === recorder) setRecordingState('ready');
     } catch (reason) {
       stream?.getTracks().forEach((track) => track.stop());
       if (disposed.current || run !== runRef.current) return;
@@ -670,7 +790,7 @@ export function useStudio(startInWorkspace = false) {
   }
 
   async function record() {
-    if (recordingState !== 'ready' || !recorderRef.current || busy) return;
+    if (recordingState !== 'ready' || !recorderRef.current || busy || activeCalibration.current) return;
     const run = runRef.current;
     const recorder = recorderRef.current;
     stopMetronome(); setError(''); setRecordingState('countdown'); setCountdown(0);
@@ -681,7 +801,14 @@ export function useStudio(startInWorkspace = false) {
       await prepareAudio();
       if (disposed.current || run !== runRef.current || recorder !== recorderRef.current) return;
       const position = engine.position;
-      capturePlacement.current = { position, delay: backingLayers.some(layer => layer.enabled && layer.volume > 0) || canSoundClick(metronomeMode, headphones) ? recordingDelay(context, recorder.inputLatency) : 0 };
+      const savedTiming = savedTimingFor(recorder);
+      setTiming(savedTiming);
+      const followingAudio = canSoundClick(metronomeMode, headphones) || (volume > 0 && backingLayers.some(
+        layer => layer.enabled && layer.volume > 0 && clipBounds(layer).end > position));
+      capturePlacement.current = {
+        position,
+        delay: followingAudio ? savedTiming?.delay ?? recordingDelay(context, recorder.inputLatency) : 0,
+      };
       setRecordFrom(position);
       engine.configureSession(backingLayers, position);
       const { beatSeconds, startAt, beatAt } = recordingSchedule(context.currentTime, tempo, countIn, position, beatOffset);
@@ -856,6 +983,7 @@ export function useStudio(startInWorkspace = false) {
     beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, cancelRetake, discardTake, canDiscardTake: nextDraft !== candidate,
     enableMicrophone, record, stopRecording, cancelCountIn, returnToTake, disconnectMicrophone, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, beatOffset, beatAlignmentStatus, alignBeat, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, devices, inputDevice, previewMetronome,
+    timing, calibrating, calibrationError, calibrateTiming, cancelCalibration,
     microphoneConnected: microphoneLabel !== null,
     microphoneLabel: microphoneLabel ?? 'Microphone not connected',
     setTempo: (value: number) => {

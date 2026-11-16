@@ -1,7 +1,8 @@
 'use client';
 
+import * as Dialog from '@radix-ui/react-dialog';
 import { useId, useState, useSyncExternalStore, type RefObject } from 'react';
-import { Activity, ArrowLeft, AudioLines, Check, ChevronDown, Download, Headphones, LoaderCircle, Mic, MicOff,
+import { Activity, ArrowLeft, AudioLines, Check, ChevronDown, Download, Headphones, LoaderCircle, Mic, MicOff, Radio,
   Music2, Pause, Play, RotateCcw, ScanLine, SlidersHorizontal, Square, Timer, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
 import { timeLabel, type Layer } from '../lib/session';
@@ -41,6 +42,59 @@ function CaptureSwitch({ label, name, description, icon: Icon, checked, disabled
   </div>;
 }
 
+function TimingCalibration({ studio }: { studio: Studio }) {
+  const [attempted, setAttempted] = useState(false);
+  const [result, setResult] = useState<Awaited<ReturnType<Studio['calibrateTiming']>>>(null);
+
+  return <Dialog.Root onOpenChange={open => {
+    if (!open) studio.cancelCalibration();
+    setAttempted(false);
+    setResult(null);
+  }}>
+    <div className="studio-calibration-row">
+      {studio.timing && <span><Check size={13} aria-hidden="true" />Timing calibrated</span>}
+      <Dialog.Trigger asChild>
+        <button className="studio-toolbar-button" type="button" disabled={studio.busy || studio.locked}>
+          <Radio size={15} aria-hidden="true" />{studio.timing ? 'Recalibrate' : 'Calibrate timing'}
+        </button>
+      </Dialog.Trigger>
+    </div>
+    <Dialog.Portal>
+      <Dialog.Overlay className="library-dialog-overlay" />
+      <Dialog.Content className="library-dialog">
+        <div className="library-dialog-title">
+          <span>{result ? <Check size={17} aria-hidden="true" /> : <Radio size={17} aria-hidden="true" />}</span>
+          <Dialog.Title>{result ? 'Timing calibrated' : 'Calibrate recording timing'}</Dialog.Title>
+        </div>
+        <Dialog.Description>{result
+          ? `Measured ${Math.round(result.delay * 1000)} ms. Studio will use it for new takes recorded with backing audio.`
+          : 'Hold one headphone or earbud close to your mic. If you use speakers, bring the mic close to one. Stay quiet while three short tones play.'}
+        </Dialog.Description>
+        {result && <p className="studio-calibration-note">
+          {result.persistent ? 'Timing saved in this browser.' : 'Timing saved for this Studio session.'}
+          {!result.outputKnown && ' Calibrate again if you switch headphones or speakers.'}
+        </p>}
+        {studio.calibrating && <p className="studio-calibration-progress" role="status">
+          <LoaderCircle size={15} aria-hidden="true" />Listening for the test tones…
+        </p>}
+        {attempted && studio.calibrationError && <p className="cloud-error" role="alert">{studio.calibrationError}</p>}
+        <div className="library-dialog-actions">
+          <Dialog.Close asChild>
+            <button className="library-dialog-button" type="button" data-variant={result ? 'primary' : undefined}>
+              {result ? 'Done' : 'Cancel'}
+            </button>
+          </Dialog.Close>
+          {!result && <button className="library-dialog-button" type="button" data-variant="primary"
+            disabled={studio.busy || studio.locked} onClick={async () => {
+              setAttempted(true);
+              setResult(await studio.calibrateTiming());
+            }}>{attempted && studio.calibrationError ? 'Try again' : 'Measure timing'}</button>}
+        </div>
+      </Dialog.Content>
+    </Dialog.Portal>
+  </Dialog.Root>;
+}
+
 function MicrophoneInput({ studio, recording }: { studio: Studio; recording: boolean }) {
   const level = Math.round(Math.min(100, studio.inputLevel * 100));
   return <div className="studio-input">
@@ -56,6 +110,7 @@ function MicrophoneInput({ studio, recording }: { studio: Studio; recording: boo
       className={`studio-input-meter ${level > 95 ? 'clipping' : ''}`}><i style={{ width: `${level}%` }} /></div>
     {level > 95 ? <small>Move back or lower your input gain.</small>
       : !recording && level <= 1 && <small>Play or sing to check your level.</small>}
+    {!recording && <TimingCalibration studio={studio} />}
   </div>;
 }
 
