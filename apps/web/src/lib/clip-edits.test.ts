@@ -33,3 +33,13 @@ test('playback schedules silence, source offset, and remaining length independen
   assert.equal(snapStart(3.96, [4], .1), 4);
   assert.equal(snapStart(3.7, [4], .1), 3.7);
 });
+
+
+test('trimming leading silence preserves the position of the remaining performance', () => {
+  const layer = editClip(original(),{trimStart:1,trimEnd:8,startAt:3});
+  const trimmed = editClip(layer,{trimStart:2});
+  assert.equal(trimmed.startAt,4); assert.equal(clipBounds(trimmed).end,10);
+  assert.equal(playbackWindow(layer,5)?.offset,playbackWindow(trimmed,5)?.offset);
+  assert.equal(editClip(trimmed,{trimStart:1}).startAt,3);
+  assert.equal(selectTake(trimmed, trimmed.takeId!).startAt,4,'the selected take persists its placement');
+});

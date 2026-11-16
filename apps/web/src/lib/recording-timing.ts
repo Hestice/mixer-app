@@ -1,0 +1,12 @@
+import { OUTPUT_DELAY } from './audio-output';
+
+const validDelay = (value: number | undefined) => Number.isFinite(value) && value! >= 0 && value! <= 2 ? value! : 0;
+/** Browser estimates, in seconds. Unknown input latency is left at zero rather than guessed. */
+export function recordingDelay(context: { baseLatency?: number; outputLatency?: number }, inputLatency?: number) {
+  return OUTPUT_DELAY + validDelay(context.baseLatency) + validDelay(context.outputLatency) + validDelay(inputLatency);
+}
+
+/** Keep the complete original; compensate through reversible trim metadata. */
+export function recordedPlacement(duration: number, position: number, delay: number) {
+  return { startAt: Math.max(0, position), trimStart: Math.min(Math.max(0, duration - .05), Math.max(0, delay)), trimEnd: duration };
+}

@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { appendTake, clipBounds, editClip, selectTake, takesOf } from '../lib/clip-edits';
+import { appendTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
 import type { ClipEdits } from '../lib/session';
+import { OUTPUT_DELAY } from '../lib/audio-output';
+import { recordingDelay, recordedPlacement } from '../lib/recording-timing';
 import { AudioEngine } from '../lib/audio-engine';
 import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
@@ -72,6 +74,8 @@ export function useStudio(startInWorkspace = false) {
   const levelRef = useRef(0);
   const runRef = useRef(0);
   const stoppingRef = useRef(false);
+  const capturePlacement = useRef({ position: 0, delay: 0 });
+  const [recordFrom, setRecordFrom] = useState(0);
   const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const disposed = useRef(false);
@@ -161,7 +165,7 @@ export function useStudio(startInWorkspace = false) {
 
   async function openMySongs() {
     if (locked || busy) return;
-    stopMetronome(); getEngine().reset(); setPlaying(false); setBusy(true);
+    stopMetronome(); getEngine().pause(); setPlaying(false); setBusy(true);
     try {
       let snapshot = contentRef.current;
       while (true) {
@@ -192,7 +196,7 @@ export function useStudio(startInWorkspace = false) {
   useEffect(() => {
     disposed.current = false;
     const interval = setInterval(() => {
-      setPosition(engineRef.current?.position ?? 0);
+      if (!recorderRef.current?.isCapturing) setPosition(engineRef.current?.position ?? 0);
       setPlaying(engineRef.current?.playing ?? false);
     }, 80);
     return () => {
@@ -236,16 +240,22 @@ export function useStudio(startInWorkspace = false) {
     if (playing) { engine.pause(); setPlaying(false); return; }
     setBusy(true);
     try {
-      await prepareAudio(workspace ? false : previewCandidate);
-      if (workspace && !layers.length) return;
-      if (workspace && previewCandidate) {
-        engine.configureSession(layers); setPreviewCandidate(false); setSoloId(null);
-        await engine.play(layers);
-      } else await engine.play(mixRef.current);
+      await prepareAudio(previewCandidate);
+      if (workspace && !layers.length && !candidate) return;
+      await engine.play(mixRef.current);
       engine.volume(volume);
       setPlaying(true);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
+  }
+
+  async function seekSong(value: number) {
+    if (locked || busy || !Number.isFinite(value)) return;
+    const position = Math.max(0, Math.min(3600, value));
+    const engine = getEngine();
+    // Sources are already decoded during playback. Seeking never starts a paused song.
+    engine.seek(mixRef.current, position);
+    setPosition(position); setPlaying(engine.playing);
   }
 
   async function toggleLayer(id: string) {
@@ -303,12 +313,12 @@ export function useStudio(startInWorkspace = false) {
     if (locked || busy) return;
     editHistory.current = [...editHistory.current.slice(-29), { layers, candidate, retakeLayerId }];
     setUndoCount(editHistory.current.length);
-    getEngine().reset(); setPlaying(false);
+    getEngine().pause(); setPlaying(false);
   }
 
   function updateClip(id: string, patch: ClipEdits, draft = false) {
     if (locked || busy) return;
-    getEngine().reset(); setPlaying(false);
+    getEngine().pause(); setPlaying(false);
     if (draft) setCandidate((current) => current ? editClip(current, patch) : null);
     else setLayers((current) => current.map((layer) => layer.id === id ? editClip(layer, patch) : layer));
   }
@@ -325,7 +335,7 @@ export function useStudio(startInWorkspace = false) {
     if (locked || busy) return;
     const previous = editHistory.current.pop();
     if (!previous) return;
-    getEngine().reset(); setPlaying(false); releaseMicrophone();
+    getEngine().pause(); setPlaying(false); releaseMicrophone();
     setLayers(previous.layers); setCandidate(previous.candidate); setRetakeLayerId(previous.retakeLayerId);
     setRecordingState(previous.candidate ? 'review' : 'idle'); setPreviewCandidate(false); setSoloId(null);
     decodedRecordings.current.clear(); setUndoCount(editHistory.current.length);
@@ -335,7 +345,7 @@ export function useStudio(startInWorkspace = false) {
     if (!candidate || locked || busy) return;
     if (workspace) beginEdit();
     const next = retakeLayerId ? layers.map((layer) => layer.id === retakeLayerId ? { ...candidate, id: layer.id, enabled: layer.enabled, volume: layer.volume } : layer) : commitLayer(layers, candidate);
-    if (workspace) { getEngine().configureSession(next); setPlaying(false); }
+    if (workspace) { getEngine().configureSession(next, getEngine().position); setPlaying(false); }
     setLayers(next); setCandidate(null); setRetakeLayerId(undefined); setSoloId(null); setPreviewCandidate(false);
     setRecordingState('idle');
     if (workspace) setPartName(next.length === 1 ? 'Vocals' : `Layer ${next.length + 1}`);
@@ -355,10 +365,10 @@ export function useStudio(startInWorkspace = false) {
     setBusy(true); setError(''); stopMetronome();
     try {
       await prepareAudio(false);
-      const review = layers.map((item) => ({ ...item, enabled: alone ? item.id === layer.id : item.id === layer.id || item.enabled }));
+      const review = layers.map((item) => ({ ...item, enabled: alone ? item.id === layer.id : item.enabled }));
       setSoloId(alone ? layer.id : null); setPreviewCandidate(false);
-      getEngine().configureSession(layers);
-      await getEngine().play(review, true, Math.max(0, clipBounds(layer).startAt - (alone ? 0 : 1)));
+      getEngine().configureSession(layers, getEngine().position);
+      await getEngine().play(review, true, getEngine().position);
       getEngine().volume(volume); setPlaying(true);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
@@ -366,7 +376,7 @@ export function useStudio(startInWorkspace = false) {
 
   function enterWorkspace(useDemo: boolean) {
     if (workspace || busy || locked) return;
-    getEngine().reset(); setPlaying(false); setError('');
+    getEngine().pause(); setPlaying(false); setError('');
     setWorkspace(true); setWithDemo(useDemo); setTitle(useDemo ? 'After hours · my version' : 'Untitled song'); setCandidate(null); setSoloId(null);
     setLayers(useDemo ? layers : []);
     setRecordingState('idle');
@@ -393,7 +403,7 @@ export function useStudio(startInWorkspace = false) {
     }
     const run = ++runRef.current;
     stopMetronome(); releaseMicrophone();
-    getEngine().reset(); setPlaying(false);
+    getEngine().pause(); setPlaying(false);
     setError(''); setRecordingState('requesting');
     let stream: MediaStream | undefined;
     try {
@@ -409,7 +419,7 @@ export function useStudio(startInWorkspace = false) {
       }, (reason) => {
         runRef.current++;
         if (recordingTimer.current) clearInterval(recordingTimer.current);
-        stopMetronome(); releaseMicrophone(); getEngine().reset(); setPlaying(false);
+        stopMetronome(); releaseMicrophone(); getEngine().pause(); setPlaying(false);
         report(reason); setRecordingState(fallbackCandidate ? 'review' : 'idle');
       });
       if (disposed.current || run !== runRef.current) { recorder.dispose(); return; }
@@ -436,7 +446,7 @@ export function useStudio(startInWorkspace = false) {
     const run = runRef.current;
     const sampleRate = recorder.sampleRate;
     if (recordingTimer.current) clearInterval(recordingTimer.current);
-    stopMetronome(); getEngine().reset(); setPlaying(false); setRecordingState('processing');
+    stopMetronome(); getEngine().pause(); setPlaying(false); setRecordingState('processing');
     try {
       const samples = await recorder.stop();
       if (disposed.current || run !== runRef.current) return;
@@ -444,13 +454,15 @@ export function useStudio(startInWorkspace = false) {
       const id = `take-${crypto.randomUUID()}`;
       const duration = getEngine().addSamples(id, samples, sampleRate);
       decodedRecordings.current.set(id, id);
-      const take: Layer = { id, name: partName.trim() || `Layer ${layers.length + 1}`, kind: 'recording', enabled: true, volume: .85, recorded: true, blob: encodeWav(samples, sampleRate), duration, peaks: getEngine().peaks(id) };
-      getEngine().configureSession(layers);
+      const placement = recordedPlacement(duration, capturePlacement.current.position, capturePlacement.current.delay);
+      const take: Layer = { ...placement, id, name: partName.trim() || `Layer ${layers.length + 1}`, kind: 'recording', enabled: true, volume: .85, recorded: true, blob: encodeWav(samples, sampleRate), duration, peaks: getEngine().peaks(id) };
+      getEngine().configureSession([...backingLayers, take], capturePlacement.current.position);
+      setPosition(capturePlacement.current.position);
       // A retry adds an alternative; the previous recording and its edits remain intact.
-      const next = candidate?.recorded ? appendTake(candidate, { id, blob: take.blob, duration, peaks: take.peaks, startAt: 0 }) : { ...take, takeId: id, takes: takesOf(take) };
+      const next = candidate?.recorded ? appendTake(candidate, { id, blob: take.blob, duration, peaks: take.peaks, ...placement }) : { ...take, takeId: id, takes: takesOf(take) };
       decodedRecordings.current.delete(next.id);
       editHistory.current = []; setUndoCount(0);
-      setCandidate(next); setPreviewCandidate(false); setSoloId(null); setRecordingState('review');
+      setCandidate(next); setPreviewCandidate(true); setSoloId(null); setRecordingState('review');
     } catch (reason) {
       if (!disposed.current && run === runRef.current) { report(reason); setRecordingState(candidate ? 'review' : 'idle'); }
     } finally {
@@ -470,21 +482,24 @@ export function useStudio(startInWorkspace = false) {
       const context = await engine.ready();
       await prepareAudio();
       if (disposed.current || run !== runRef.current || recorder !== recorderRef.current) return;
-      engine.configureSession(backingLayers);
+      const position = engine.position;
+      capturePlacement.current = { position, delay: backingLayers.some(layer => layer.enabled && layer.volume > 0) || canSoundClick(metronomeMode, headphones) ? recordingDelay(context, recorder.inputLatency) : 0 };
+      setRecordFrom(position);
+      engine.configureSession(backingLayers, position);
       const beatSeconds = 60 / tempo;
       const countAt = context.currentTime + .12;
       const startAt = countAt + (countIn ? 4 * beatSeconds : 0);
       recorder.start(startAt);
       engine.volume(volume);
-      engine.playAt(backingLayers, startAt);
+      engine.playAt(backingLayers, startAt, position);
       metronomeRef.current = new Metronome(context);
-      metronomeRef.current.start(countAt, tempo, canSoundClick(metronomeMode, headphones));
+      metronomeRef.current.start(countAt + OUTPUT_DELAY, tempo, canSoundClick(metronomeMode, headphones));
       const update = () => {
         const seconds = context.currentTime - startAt;
         if (seconds < 0) {
           setCountdown(countIn ? Math.min(4, Math.ceil(-seconds / beatSeconds)) : 0);
         } else {
-          setRecordingState('recording'); setCountdown(0); setElapsed(seconds);
+          setRecordingState('recording'); setCountdown(0); setElapsed(seconds); setPosition(position + seconds);
           setLivePeaks((current) => [...current.slice(-63), Math.min(1, levelRef.current * 3)]);
         }
         setBeat(metronomeMode !== 'off' || seconds < 0 ? Math.max(0, Math.floor((context.currentTime - countAt) / beatSeconds)) % 4 : -1);
@@ -493,7 +508,7 @@ export function useStudio(startInWorkspace = false) {
       recordingTimer.current = setInterval(update, 80);
     } catch (reason) {
       if (run === runRef.current && !disposed.current) {
-        recorder.cancel(); stopMetronome(); getEngine().reset(); releaseMicrophone();
+        recorder.cancel(); stopMetronome(); getEngine().pause(); releaseMicrophone();
         report(reason); setRecordingState(candidate ? 'review' : 'idle');
       }
     }
@@ -502,7 +517,7 @@ export function useStudio(startInWorkspace = false) {
   function cancelSetup() {
     runRef.current++;
     if (recordingTimer.current) clearInterval(recordingTimer.current);
-    stopMetronome(); releaseMicrophone(); getEngine().reset(); setPlaying(false);
+    stopMetronome(); releaseMicrophone(); getEngine().pause(); setPlaying(false);
     setCountdown(0); setRecordingState(candidate ? 'review' : 'idle');
   }
 
@@ -530,8 +545,8 @@ export function useStudio(startInWorkspace = false) {
       await prepareAudio(true);
       const review = [...backingLayers, candidate].map((layer) => ({ ...layer, enabled: alone ? layer.id === candidate.id : layer.id === candidate.id || layer.enabled }));
       setSoloId(alone ? candidate.id : null); setPreviewCandidate(true);
-      getEngine().configureSession([...backingLayers, candidate]);
-      await getEngine().play(review, true, Math.max(0, clipBounds(candidate).startAt - (alone ? 0 : 1)));
+      getEngine().configureSession([...backingLayers, candidate], getEngine().position);
+      await getEngine().play(review, true, getEngine().position);
       getEngine().volume(volume); setPlaying(true);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
@@ -573,9 +588,9 @@ export function useStudio(startInWorkspace = false) {
     songId, cloudStatus: cloud.status(songId, localRevision), cloudError: cloud.errors[songId], retryCloud: cloud.retry,
     title, setTitle, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, retrySave: () => persistSong(), openMySongs,
     layers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
-    elapsed, position, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
+    elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
-    togglePlayback, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
+    togglePlayback, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     beginEdit, updateClip, chooseTake, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
     enableMicrophone, record, stopRecording, cancelSetup, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beat, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,
