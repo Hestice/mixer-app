@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useId, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import type { Studio } from '../hooks/use-studio';
 import { ClipEditor } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
@@ -26,9 +26,27 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, chil
   const [openLayer, setOpenLayer] = useState<string | null>(null);
   const optionsId = useId();
   const viewport = useRef<HTMLDivElement>(null);
+  const scrub = useRef<{ pointer: number; x: number; moved: boolean } | null>(null);
   const disabled = studio.locked || studio.busy;
   const rows = studio.layers.map(layer => ({ layer, draft: false }));
   if (studio.candidate) rows.push({ layer: studio.candidate, draft: true });
+
+  function beginScrub(event: PointerEvent<HTMLInputElement>) {
+    if (disabled || event.button !== 0 || !event.isPrimary || !studio.beginScrub()) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrub.current = { pointer: event.pointerId, x: event.clientX, moved: false };
+  }
+
+  function moveScrub(event: PointerEvent<HTMLInputElement>) {
+    const drag = scrub.current;
+    if (drag?.pointer === event.pointerId && Math.abs(event.clientX - drag.x) >= 3) drag.moved = true;
+  }
+
+  function endScrub(event: PointerEvent<HTMLInputElement>) {
+    if (scrub.current?.pointer !== event.pointerId) return;
+    scrub.current = null;
+    studio.endScrub();
+  }
 
   function seekToStart() {
     viewport.current?.scrollTo({ left: 0, behavior: 'instant' });
@@ -58,7 +76,14 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, chil
               {Array.from({ length: 9 }, (_, index) => <span key={index}>{preciseTime(span * index / 8)}</span>)}
             </div>
             <input aria-label="Song position" aria-valuetext={preciseTime(studio.position)} type="range" min="0" max={span} step=".01"
-              value={Math.min(span, studio.position)} disabled={disabled} onChange={event => void studio.seekSong(Number(event.target.value))} />
+              value={Math.min(span, studio.position)} disabled={disabled}
+              onPointerDown={beginScrub} onPointerMove={moveScrub} onPointerUp={endScrub}
+              onPointerCancel={endScrub} onLostPointerCapture={endScrub}
+              onChange={event => {
+                const position = Number(event.target.value);
+                if (scrub.current) studio.scrubSong(position, scrub.current.moved);
+                else void studio.seekSong(position);
+              }} />
           </div>
         </div>
         {rows.map(({ layer, draft }) => {

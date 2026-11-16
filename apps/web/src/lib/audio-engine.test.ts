@@ -4,13 +4,22 @@ import { AudioEngine } from './audio-engine';
 import { tourBuildStage } from './story-motion';
 import { demoLayers, extractPeaks, harmonyLayer, tourScene } from './session';
 
-class FakeParam { value = 0; setTargetAtTime(value: number) { this.value = value; } }
+class FakeParam {
+  value = 0;
+  setTargetAtTime(value: number) { this.value = value; }
+  setValueAtTime(value: number) { this.value = value; }
+  linearRampToValueAtTime(value: number) { this.value = value; }
+}
 class FakeNode { connect() {} disconnect() {} }
 class FakeGain extends FakeNode { gain = new FakeParam(); }
 class FakeBuffer {
-  numberOfChannels = 1; sampleRate = 100; length = 1143; duration = 11.43;
-  getChannelData() { return new Float32Array(this.length); }
-  copyToChannel() {}
+  private channels: Float32Array[];
+  constructor(public numberOfChannels = 1, public length = 1143, public sampleRate = 100) {
+    this.channels = Array.from({ length: numberOfChannels }, () => new Float32Array(length));
+  }
+  get duration() { return this.length / this.sampleRate; }
+  getChannelData(channel: number) { return this.channels[channel]; }
+  copyToChannel(samples: Float32Array, channel: number) { this.channels[channel].set(samples); }
 }
 class FakeSource extends FakeNode {
   buffer: FakeBuffer | null = null; loop = false; loopEnd = 0; stopped = false;
@@ -21,13 +30,13 @@ class FakeSource extends FakeNode {
 }
 class FakeContext {
   static current: FakeContext;
-  currentTime = 0; state = 'running'; destination = new FakeNode();
+  currentTime = 0; state = 'running'; sampleRate = 1000; destination = new FakeNode();
   sources: FakeSource[] = []; gains: FakeGain[] = [];
   constructor() { FakeContext.current = this; }
   createGain() { const gain = new FakeGain(); this.gains.push(gain); return gain; }
   createDynamicsCompressor() { return Object.assign(new FakeNode(), { threshold: new FakeParam(), ratio: new FakeParam() }); }
   createBufferSource() { const source = new FakeSource(); this.sources.push(source); return source; }
-  createBuffer(_channels: number, length: number, sampleRate: number) { const buffer = new FakeBuffer(); buffer.length = length; buffer.sampleRate = sampleRate; buffer.duration = length / sampleRate; return buffer; }
+  createBuffer(channels: number, length: number, sampleRate: number) { return new FakeBuffer(channels, length, sampleRate); }
   async decodeAudioData() { return new FakeBuffer(); }
   async resume() {} async close() { this.state = 'closed'; }
 }
@@ -257,4 +266,68 @@ test('a recording read failure identifies the layer and retains the browser erro
   Object.defineProperty(broken,'arrayBuffer',{value:async()=>{throw cause;}});
   await assert.rejects(engine.addRecording('voice',broken,'Lead vocals'),error=>error instanceof Error && error.message.includes('Lead vocals') && error.message.includes('NotFoundError') && error.cause===cause);
   assert.equal(engine.playing,false);engine.dispose();
+});
+
+
+test('a playing scrub pitches the audible trimmed mix in the drag direction and resumes once at release', async () => {
+  const engine = new AudioEngine();
+  await engine.ready();
+  engine.addSamples('take', Float32Array.from({ length: 4000 }, (_, index) => index / 4000), 1000);
+  engine.addSamples('muted', new Float32Array(4000).fill(1), 1000);
+  const layers = [
+    { id: 'take', name: 'Guitar', kind: 'recording' as const, enabled: true, volume: .5, duration: 4, trimStart: 1, trimEnd: 3, startAt: .5 },
+    { id: 'muted', name: 'Voice', kind: 'recording' as const, enabled: false, volume: 1, duration: 4 },
+  ];
+  engine.configureSession(layers);
+  assert.equal(engine.beginScrub(), false, 'a paused drag must stay quiet');
+  await engine.play(layers);
+  const context = FakeContext.current;
+  context.currentTime = 1.54;
+  assert.equal(engine.beginScrub(), true);
+  assert.ok(context.sources.every(source => source.stopped));
+  assert.equal(engine.position, 1.5);
+  assert.equal(engine.playbackClock, null);
+  assert.equal(engine.beginScrub(), false, 'only one pointer gesture can hold the transport');
+  engine.scrubTo(layers, 1.6, false);
+  assert.equal(context.sources.length, 2, 'a click on the ruler must stay quiet');
+  engine.scrubTo(layers, 1.2, true);
+  const reverse = context.sources.at(-1)!.buffer!.getChannelData(0);
+  assert.ok(reverse[12] > reverse[24], 'a backward drag reads samples in reverse');
+  assert.ok(reverse[12] > .2 && reverse[12] < .25, 'the sample follows the trim, placement and layer volume without the muted track');
+  assert.equal(reverse[0], 0);
+  assert.equal(reverse.at(-1), 0);
+  context.currentTime += .04;
+  engine.scrubTo(layers, 1.4, true);
+  const forward = context.sources.at(-1)!.buffer!.getChannelData(1);
+  assert.ok(forward[12] < forward[24], 'dragging the other way changes direction');
+  context.currentTime += .5;
+  assert.equal(engine.position, 1.4, 'the cursor holds still while the pointer is held');
+  engine.sync(layers);
+  assert.equal(context.sources.length, 4, 'a mix update must not start normal playback during a scrub');
+
+  assert.equal(engine.endScrub(layers), true);
+  assert.equal(engine.endScrub(layers), false);
+  assert.equal(engine.playing, true);
+  const resumed = context.sources.filter(source => !source.stopped);
+  assert.equal(resumed.length, 2);
+  assert.equal(resumed[0].started[1], 1.9);
+  assert.equal(resumed[1].started[1], 1.4);
+  engine.dispose();
+});
+
+test('stopping during a scratch cancels it and an ensuing release cannot restart playback', async () => {
+  const engine = new AudioEngine();
+  await engine.loadDemo();
+  engine.configureSession(demoLayers, 2);
+  await engine.play(demoLayers);
+  const context = FakeContext.current;
+  assert.equal(engine.beginScrub(), true);
+  engine.scrubTo(demoLayers, 1.5, true);
+  assert.equal(context.sources.length, 4);
+  engine.reset();
+  assert.ok(context.sources.every(source => source.stopped));
+  assert.equal(engine.endScrub(demoLayers), false);
+  assert.equal(engine.position, 0);
+  assert.equal(engine.playing, false);
+  engine.dispose();
 });

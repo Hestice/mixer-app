@@ -355,6 +355,31 @@ export function useStudio(startInWorkspace = false) {
     setPosition(position); setPlaying(engine.playing);
   }
 
+  function beginScrub() {
+    if (locked || busy || !getEngine().beginScrub()) return false;
+    if (metronomePreview && beatOffset !== undefined) stopMetronome(true);
+    return true;
+  }
+
+  function scrubSong(value: number, audible = true) {
+    if (locked || !Number.isFinite(value)) return;
+    const engine = getEngine();
+    engine.scrubTo(mixRef.current, Math.max(0, Math.min(3600, value)), audible);
+    setPosition(engine.position);
+  }
+
+  function endScrub() {
+    const engine = getEngine();
+    if (!engine.endScrub(mixRef.current)) return;
+    setPosition(engine.position);
+    setPlaying(engine.playing);
+    if (metronomePreview && beatOffset !== undefined) {
+      const clock = engine.playbackClock;
+      if (clock) startBeatPreview(clock.context);
+      else stopMetronome();
+    }
+  }
+
   async function toggleLayer(id: string) {
     if (locked || busy) return;
     const layer = layers.find(item => item.id === id);
@@ -530,11 +555,12 @@ export function useStudio(startInWorkspace = false) {
     getEngine().configureSession(useDemo ? layers : []);
   }
 
-  function stopMetronome() {
+  function stopMetronome(keepPreview = false) {
     metronomeRef.current?.stop();
     if (beatTimer.current) clearInterval(beatTimer.current);
     beatTimer.current = null;
-    setMetronomePreview(false); setBeatIndex(-1);
+    if (!keepPreview) setMetronomePreview(false);
+    setBeatIndex(-1);
   }
 
   function startVisualBeat(context: AudioContext, when: number, beatSeconds: number, until = Infinity) {
@@ -816,7 +842,7 @@ export function useStudio(startInWorkspace = false) {
     layers, archivedLayers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
-    togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
+    togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, beginScrub, scrubSong, endScrub, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, cancelRetake, discardTake, canDiscardTake: nextDraft !== candidate,
     enableMicrophone, record, stopRecording, cancelCountIn, returnToTake, disconnectMicrophone, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, beatOffset, beatAlignmentStatus, alignBeat, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, devices, inputDevice, previewMetronome,

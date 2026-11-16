@@ -18,7 +18,7 @@ type Gesture = {
   angle: number | null;
   position: number;
   dragging: boolean;
-  resume: boolean;
+  scratching: boolean;
 };
 
 function pointerAngle(event: PointerEvent<HTMLElement>) {
@@ -63,7 +63,7 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
     event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = {
       pointer: event.pointerId, x: event.clientX, y: event.clientY, angle: pointerAngle(event),
-      position: studio.position, dragging: false, resume: false,
+      position: studio.position, dragging: false, scratching: false,
     };
   }
 
@@ -73,12 +73,16 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
     if (!drag.dragging) {
       if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 5) return;
       drag.dragging = true;
-      drag.resume = studio.playing;
-      drag.position = studio.pausePlayback();
+      drag.scratching = studio.beginScrub();
+      drag.position = studio.readSongPosition();
     }
     const angle = pointerAngle(event);
     if (angle !== null && drag.angle !== null) {
-      drag.position = seek(drag.position + secondsForRotation(drag.angle, angle));
+      const position = drag.position + secondsForRotation(drag.angle, angle);
+      if (drag.scratching) {
+        drag.position = Math.max(0, Math.min(span, position));
+        studio.scrubSong(drag.position);
+      } else drag.position = seek(position);
     }
     drag.angle = angle;
   }
@@ -87,9 +91,8 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
     const drag = gesture.current;
     if (!drag || drag.pointer !== event.pointerId) return;
     gesture.current = null;
-    if (drag.dragging) {
-      if (drag.resume && drag.position < studio.duration) toggle();
-    } else if (tap) toggle();
+    if (drag.scratching) studio.endScrub();
+    else if (tap && !drag.dragging) toggle();
   }
 
   function keyDown(event: KeyboardEvent<HTMLDivElement>) {
