@@ -1,6 +1,13 @@
 export type MetronomeMode = 'off' | 'visual' | 'sound';
 export const canSoundClick = (mode: MetronomeMode, headphones: boolean) => mode === 'sound' && headphones;
 
+/** Time from a song position to the next beat on its fitted grid. */
+export function nextBeatDelay(position: number, tempo: number, beatOffset: number) {
+  const period = 60 / tempo;
+  const remainder = ((beatOffset - position) % period + period) % period;
+  return period - remainder < 1e-7 ? 0 : remainder;
+}
+
 export function metronomeBeatAt(time: number, start: number, beatSeconds: number) {
   return time < start ? -1 : Math.floor((time - start) / beatSeconds);
 }

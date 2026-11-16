@@ -52,7 +52,7 @@ export async function makeManifest(song: Omit<SavedSong, 'createdAt'> & { create
   const candidate = song.candidate ? await convert(song.candidate) : null;
   return { version: 2, title: recovered ? `${song.title} · Recovered version` : song.title,
     artwork: song.artwork, createdAt: song.createdAt, archivedAt: song.archivedAt, deletedAt: song.deletedAt, layers, candidate, retakeLayerId: song.retakeLayerId, withDemo: song.withDemo, volume: song.volume, partName: song.partName,
-    tempo: song.tempo, countIn: song.countIn, metronomeMode: song.metronomeMode };
+    tempo: song.tempo, beatOffset: song.beatOffset, countIn: song.countIn, metronomeMode: song.metronomeMode };
 }
 
 export async function downloadManifest(manifest: CloudManifest, ownerId: string, download: (path: string) => Promise<Blob>): Promise<SongContent> {
@@ -61,6 +61,9 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
     || !Number.isFinite(manifest.volume) || typeof manifest.partName !== 'string'
     || typeof manifest.countIn !== 'boolean' || typeof manifest.withDemo !== 'boolean'
     || !['off', 'visual', 'sound'].includes(manifest.metronomeMode)) throw new Error('This song uses an unsupported format. Your local copy was not changed.');
+  if (manifest.beatOffset !== undefined && (!Number.isFinite(manifest.beatOffset) || manifest.beatOffset < 0 || manifest.beatOffset >= 1.5)) {
+    throw new Error('The metronome alignment is invalid. Your local copy was not changed.');
+  }
   if (manifest.artwork !== undefined && !validRecordArt(manifest.artwork)) throw new Error('The record artwork is invalid. Your local copy was not changed.');
   function validateLifecycle(entry: Lifecycle) {
     for (const date of [entry.archivedAt, entry.deletedAt]) {
@@ -119,7 +122,7 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
   for (const layer of manifest.layers) layers.push(await restore(layer));
   return { artwork: manifest.artwork, archivedAt: manifest.archivedAt, deletedAt: manifest.deletedAt, title: manifest.title, layers, candidate: manifest.candidate ? await restore(manifest.candidate) : null, retakeLayerId: manifest.retakeLayerId,
     withDemo: manifest.withDemo, volume: manifest.volume, partName: manifest.partName,
-    tempo: manifest.tempo, countIn: manifest.countIn, metronomeMode: manifest.metronomeMode };
+    tempo: manifest.tempo, beatOffset: manifest.beatOffset, countIn: manifest.countIn, metronomeMode: manifest.metronomeMode };
 }
 
 /** Restore matching immutable recordings while keeping newer local edits and takes. */

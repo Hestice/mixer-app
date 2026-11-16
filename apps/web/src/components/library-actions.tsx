@@ -46,14 +46,14 @@ export function LibraryActions({ kind, title, archived = false, disabled, onActi
         }}>
           <DropdownMenu.Item className="library-menu-item" onSelect={() => openDialog('rename')}><Pencil aria-hidden="true" />Rename</DropdownMenu.Item>
           {onBackup && <DropdownMenu.Item className="library-menu-item" onSelect={() => void run(onBackup)}><CloudUpload aria-hidden="true" />Back up to cloud</DropdownMenu.Item>}
-          {archived ? <>
-            <DropdownMenu.Item className="library-menu-item" onSelect={() => void run(() => onAction({ type: 'restore' }))}><ArchiveRestore aria-hidden="true" />Restore</DropdownMenu.Item>
+          {archived && <DropdownMenu.Item className="library-menu-item" onSelect={() => void run(() => onAction({ type: 'restore' }))}><ArchiveRestore aria-hidden="true" />Restore</DropdownMenu.Item>}
+          {archived || kind === 'layer' ? <>
             <DropdownMenu.Separator className="library-menu-divider" />
             <DropdownMenu.Item className="library-menu-item" data-variant="destructive" onSelect={() => openDialog('delete')}><Trash2 aria-hidden="true" />Delete…</DropdownMenu.Item>
           </> : <DropdownMenu.Item className="library-menu-item" onSelect={() => void run(() => onAction({ type: 'archive' }))}><Archive aria-hidden="true" />Archive</DropdownMenu.Item>}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
-    {dialog && <LibraryDialog kind={kind} title={title} action={dialog} onAction={onAction} onClose={() => setDialog(null)} restoreFocus={() => trigger.current?.focus()} />}
+    {dialog && <LibraryDialog kind={kind} title={title} archived={archived} action={dialog} onAction={onAction} onClose={() => setDialog(null)} restoreFocus={() => trigger.current?.focus()} />}
   </>;
 }

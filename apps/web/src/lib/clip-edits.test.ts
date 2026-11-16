@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendTake, clipBounds, editClip, playbackWindow, selectTake, takesOf, snapStart } from './clip-edits';
+import { appendTake, clipBounds, discardDraftTake, editClip, playbackWindow, selectTake, takesOf, snapStart } from './clip-edits';
 import type { Layer } from './session';
 const original = (): Layer => ({ id: 'part', name: 'Guitar', kind: 'recording', enabled: true, volume: .8, recorded: true, duration: 10, blob: new Blob(['first']), peaks: [.2, .5] });
 test('old recordings become a first take without losing their original bytes', async () => {
@@ -42,4 +42,24 @@ test('trimming leading silence preserves the position of the remaining performan
   assert.equal(playbackWindow(layer,5)?.offset,playbackWindow(trimmed,5)?.offset);
   assert.equal(editClip(trimmed,{trimStart:1}).startAt,3);
   assert.equal(selectTake(trimmed, trimmed.takeId!).startAt,4,'the selected take persists its placement');
+});
+
+test('discarding a draft take selects the most recent remaining attempt and retains its edits', () => {
+  const first = editClip(original(), { trimStart: 1, startAt: 3 });
+  const second = appendTake(first, { id: 'second', duration: 8, blob: new Blob(['second']) });
+  const third = appendTake(second, { id: 'third', duration: 6, blob: new Blob(['third']) });
+  const keptDraft = discardDraftTake(selectTake(third, 'second'));
+  assert.equal(keptDraft?.takeId, 'third');
+  assert.deepEqual(takesOf(keptDraft!).map(take => take.id), ['part', 'third']);
+  assert.equal(selectTake(keptDraft!, 'part').startAt, 3);
+  assert.equal(discardDraftTake(first), null);
+});
+
+test('discarding the last retake ends review while the kept layer and its takes stay intact', () => {
+  const kept = original();
+  const draft = appendTake(kept, { id: 'retry', duration: 8, blob: new Blob(['retry']) });
+  const selectedOriginal = selectTake(draft, kept.id);
+  assert.equal(discardDraftTake(selectedOriginal, kept), selectedOriginal);
+  assert.equal(discardDraftTake(draft, kept), null);
+  assert.deepEqual(takesOf(kept).map(take => take.id), ['part']);
 });

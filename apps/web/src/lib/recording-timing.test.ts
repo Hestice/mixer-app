@@ -26,3 +26,12 @@ test('count-in adds four beats while immediate capture starts on the first sched
   assert.equal(immediate.countAt, counted.countAt);
   assert.equal(immediate.startAt, immediate.countAt);
 });
+
+test('an aligned beat follows the song after seeking or starting a count-in', () => {
+  const immediate = recordingSchedule(1, 120, false, 3, .18);
+  const counted = recordingSchedule(1, 120, true, 3, .18);
+  assert.equal(counted.startAt - immediate.startAt, 2);
+  const delay = .18 + recordingDelay({});
+  assert.ok(Math.abs(immediate.beatAt - immediate.startAt - delay) < .000001);
+  assert.ok(Math.abs(counted.beatAt + 2 - counted.startAt - delay) < .000001);
+});

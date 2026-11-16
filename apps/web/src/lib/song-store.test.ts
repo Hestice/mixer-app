@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getSong, listSongs, openLocalSong, saveSong, updateSavedSong, SongWriter, SongConflictError, storageMessage, type SongContent } from './song-store';
 import { encodeWav } from './wav';
+import { layerLifecycleEdit } from './library-entry';
 
 const song = (): SongContent => ({ title: 'Evening idea', layers: [], candidate: null, withDemo: false, volume: .6, partName: 'Vocals', tempo: 96, countIn: false, metronomeMode: 'visual' });
 const take = () => ({ id: crypto.randomUUID(), name: 'Guitar', kind: 'recording' as const, enabled: true, volume: .8, recorded: true, duration: 1, peaks: [.1, .4], blob: encodeWav(new Float32Array([.2, -.4, .6]), 44100) });
@@ -101,14 +102,16 @@ test('song summaries exclude inactive layers while autosave retains their record
   const id = crypto.randomUUID(), archive = take(), deleted = take(), current = take(), now = Date.now();
   await saveSong(id, 0, { ...song(), layers: [
     { ...archive, archivedAt: now, startAt: 42 },
-    { ...deleted, archivedAt: now, deletedAt: now, startAt: 80 },
-    current,
+    { ...deleted, ...layerLifecycleEdit({}, 'delete', now), startAt: 80 },
+    { ...current, color: 'slate' },
   ] });
   const summary = (await listSongs()).find(item => item.id === id)!;
   assert.equal(summary.layerCount, 1);
   assert.equal(summary.duration, current.duration);
   const reopened = (await openLocalSong(id)).song!;
   assert.equal(reopened.layers.length, 3);
-  assert.ok(reopened.layers[1].deletedAt);
+  assert.equal(reopened.layers[1].deletedAt, now);
+  assert.equal(reopened.layers[1].archivedAt, undefined);
+  assert.equal(reopened.layers[2].color, 'slate');
   assert.deepEqual(await reopened.layers[1].blob!.arrayBuffer(), await deleted.blob.arrayBuffer());
 });

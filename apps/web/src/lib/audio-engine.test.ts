@@ -62,6 +62,25 @@ test('free recordings retain their full lengths and never repeat or truncate sho
   engine.dispose();
 });
 
+test('repeated play requests replace the active mix and pause stops every source', async () => {
+  const engine = new AudioEngine();
+  await engine.loadDemo();
+  engine.configureSession(demoLayers, 2);
+  await Promise.all([engine.play(demoLayers), engine.play(demoLayers), engine.play(demoLayers)]);
+  const context = FakeContext.current;
+  assert.equal(context.sources.filter(source => !source.stopped).length, demoLayers.length);
+
+  context.currentTime = 1.04;
+  engine.pause();
+  assert.equal(engine.position, 3);
+  assert.ok(context.sources.every(source => source.stopped));
+
+  await engine.play(demoLayers);
+  const resumed = context.sources.filter(source => !source.stopped);
+  assert.deepEqual(resumed.map(source => source.started[1]), [3, 3, 3]);
+  engine.dispose();
+});
+
 test('overdubbing schedules all backing layers at the microphone capture time', async () => {
   const engine = new AudioEngine();
   await engine.loadDemo();

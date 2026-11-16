@@ -21,12 +21,12 @@ function ClipNumber({ label, name, value, min, max, step, disabled, onValue }: {
 export function TakePicker({ layer, studio, draft = false }: { layer: Layer; studio: Studio; draft?: boolean }) {
   const takes = takesOf(layer);
   if (!takes.length) return null;
-  return <label className="take-picker">Take<select aria-label={`${layer.name} take${draft ? ' to review' : ''}`} disabled={studio.locked || studio.busy || (!draft && studio.retakeLayerId === layer.id)} value={layer.takeId ?? layer.id} onChange={(event) => studio.chooseTake(layer.id, event.target.value, draft)}>
+  return <label className="take-picker">{draft && 'Take'}<select aria-label={`${layer.name} take${draft ? ' to review' : ''}`} disabled={studio.locked || studio.busy || (!draft && studio.retakeLayerId === layer.id)} value={layer.takeId ?? layer.id} onChange={(event) => studio.chooseTake(layer.id, event.target.value, draft)}>
     {takes.map((take, index) => <option key={take.id} value={take.id}>Take {index + 1} · {seconds(take.duration)}</option>)}
-  </select><span>{takes.length === 1 ? 'Original saved' : `${takes.length} attempts saved`}</span></label>;
+  </select>{draft && <span>{takes.length === 1 ? 'Original saved' : `${takes.length} attempts saved`}</span>}</label>;
 }
 
-export function ClipEditor({ layer, studio, span, draft = false, timelineOnly = false, detailsOnly = false }: { layer: Layer; studio: Studio; span: number; draft?: boolean; timelineOnly?: boolean; detailsOnly?: boolean }) {
+export function ClipEditor({ layer, studio, span, draft = false, timelineOnly = false }: { layer: Layer; studio: Studio; span: number; draft?: boolean; timelineOnly?: boolean }) {
   const [preview, setPreview] = useState<ClipEdits | null>(null);
   const drag = useRef<Drag | null>(null);
   const lane = useRef<HTMLDivElement>(null);
@@ -74,18 +74,13 @@ export function ClipEditor({ layer, studio, span, draft = false, timelineOnly = 
     studio.beginEdit(); studio.updateClip(layer.id, { [field]: value }, draft);
   }
   return <div className="clip-editor">
-    {draft && !timelineOnly && !detailsOnly && <span className="clip-caption">Place in song <small>Drag the part left or right</small></span>}
-    {!detailsOnly && <><div ref={lane} className="studio-track-lane clip-lane" aria-label={`${layer.name} timeline`}>
+    {timelineOnly ? <div ref={lane} className="studio-track-lane clip-lane" aria-label={`${layer.name} timeline`}>
       <button className="clip-body" disabled={disabled} style={{ left: `${clip.startAt / span * 100}%`, width: `${clip.length / span * 100}%` }} aria-label={`Move ${layer.name}. Starts at ${seconds(clip.startAt)}`} onPointerDown={(event) => start(event, 'move')} onKeyDown={(event) => keyboard(event, 'startAt')} {...pointer}>
         <TimelineWaveform layer={{ ...layer, ...preview }} /><span className="clip-grip" aria-hidden="true">⠿</span>
       </button>
-      {timelineOnly && <>{(['in', 'out'] as const).map((kind) => <button key={kind} className={`timeline-trim timeline-trim-${kind}`} disabled={disabled} aria-label={`${layer.name}${draft ? ' review' : ''} trim ${kind === 'in' ? 'beginning' : 'ending'} in song`} style={{ left: `${(kind === 'in' ? clip.startAt : clip.end) / span * 100}%` }} onPointerDown={(event) => start(event, kind)} onKeyDown={(event) => keyboard(event, kind === 'in' ? 'trimStart' : 'trimEnd')} {...pointer} />)}</>}
+      {(['in', 'out'] as const).map((kind) => <button key={kind} className={`timeline-trim timeline-trim-${kind}`} disabled={disabled} aria-label={`${layer.name}${draft ? ' review' : ''} trim ${kind === 'in' ? 'beginning' : 'ending'} in song`} style={{ left: `${(kind === 'in' ? clip.startAt : clip.end) / span * 100}%` }} onPointerDown={(event) => start(event, kind)} onKeyDown={(event) => keyboard(event, kind === 'in' ? 'trimStart' : 'trimEnd')} {...pointer} />)}
       <span className="studio-playhead" style={{ left: `${Math.min(100, studio.position / span * 100)}%` }} aria-hidden="true" />
-    </div>
-    </>}
-    {!timelineOnly && <><div className="clip-caption"><span>Enters at {seconds(clip.startAt)}</span><span>{seconds(clip.length)} used</span></div>
-    <details className="clip-details" open={draft || undefined}>
-      <summary>Trim &amp; timing</summary>
+    </div> : <>
       <p className="studio-help">Drag the edges to choose your part. Your full recording stays saved.</p>
       <div ref={trimLane} className="trim-lane">
         <Waveform peaks={layer.peaks} />
@@ -101,6 +96,6 @@ export function ClipEditor({ layer, studio, span, draft = false, timelineOnly = 
         <ClipNumber label="Enter at" name={`${layer.name} start in song seconds`} value={clip.startAt} min={0} max={MAX_START} step={.1} disabled={disabled} onValue={(value) => numberEdit('startAt', value)} />
       </div>
       <button className="text-button clip-reset" disabled={disabled || (clip.trimStart === 0 && clip.trimEnd === clip.duration)} onClick={() => { studio.beginEdit(); studio.updateClip(layer.id, { trimStart: 0, trimEnd: clip.duration }, draft); }}>Use full recording</button>
-    </details></>}
+    </>}
   </div>;
 }

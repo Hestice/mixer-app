@@ -2,6 +2,11 @@ import type { Lifecycle } from './library-entry';
 import demoPeaks from './demo-peaks.json';
 import { layerReveal, STORY_BOUNDARIES } from './story-motion';
 
+export const layerColors = {
+  moss: 'Moss', teal: 'Teal', slate: 'Slate blue', plum: 'Plum', clay: 'Clay', ochre: 'Ochre',
+} as const;
+export type LayerColor = keyof typeof layerColors;
+
 export type LayerKind = 'guitar' | 'keys' | 'rhythm' | 'harmony' | 'recording';
 export interface ClipEdits { trimStart?: number; trimEnd?: number; startAt?: number }
 export interface RecordingTake extends ClipEdits {
@@ -14,6 +19,7 @@ export interface Layer extends ClipEdits, Lifecycle {
   id: string;
   name: string;
   kind: LayerKind;
+  color?: LayerColor;
   enabled: boolean;
   volume: number;
   recorded?: boolean;

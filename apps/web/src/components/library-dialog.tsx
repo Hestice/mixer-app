@@ -5,9 +5,10 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Pencil, Trash2 } from 'lucide-react';
 import type { LibraryAction } from '../lib/library-entry';
 
-export function LibraryDialog({ kind, title, action, onAction, onClose, restoreFocus }: {
+export function LibraryDialog({ kind, title, archived, action, onAction, onClose, restoreFocus }: {
   kind: 'song' | 'layer';
   title: string;
+  archived: boolean;
   action: 'rename' | 'delete';
   onAction: (action: LibraryAction) => Promise<void> | void;
   onClose: () => void;
@@ -51,7 +52,7 @@ export function LibraryDialog({ kind, title, action, onAction, onClose, restoreF
             <Dialog.Title>{deleting ? `Delete ${kind}?` : `Rename ${kind}`}</Dialog.Title>
           </div>
           {deleting
-            ? <Dialog.Description><strong>{title}</strong> will be removed from the archive. Its recordings will stay stored.</Dialog.Description>
+            ? <Dialog.Description><strong>{title}</strong> will be removed from {archived ? 'the archive' : 'this song'}. Its recordings will stay stored.</Dialog.Description>
             : <label className="library-name-edit"><span>{kind === 'song' ? 'Song name' : 'Layer name'}</span><input ref={nameInput} value={name} maxLength={70} required disabled={pending} onChange={event => setName(event.target.value)} /></label>}
           {error && <p className="cloud-error" role="alert">{error}</p>}
           <div className="library-dialog-actions">

@@ -23,6 +23,16 @@ export function selectTake(layer: Layer, id: string): Layer {
 export function appendTake(layer: Layer, take: RecordingTake): Layer {
   return selectTake({ ...layer, takes: [...takesOf(layer), take] }, take.id);
 }
+/** Remove the selected draft take. Existing takes in a kept layer stay available. */
+export function discardDraftTake(layer: Layer, keptLayer?: Layer): Layer | null {
+  const selected = layer.takeId ?? layer.id;
+  const kept = new Set(keptLayer ? takesOf(keptLayer).map(take => take.id) : []);
+  if (kept.has(selected)) return layer;
+  const takes = takesOf(layer).filter(take => take.id !== selected);
+  const next = takes.filter(take => !kept.has(take.id)).at(-1);
+  return next ? selectTake({ ...layer, takes }, next.id) : null;
+}
+
 export function editClip(layer: Layer, patch: ClipEdits): Layer {
   const previous = clipBounds(layer);
   const next = clipBounds({ ...layer, ...patch });

@@ -35,7 +35,7 @@ export function TimelineWaveform({ layer }: { layer: Layer }) {
     if (layer.blob) { const blob = layer.blob; void detailedPeaks(blob).then((peaks) => { if (!canceled) setDetail({ blob, peaks }); }).catch(() => {}); }
     return () => { canceled = true; };
   }, [layer.blob]);
-  const peaks = detail?.blob === layer.blob ? detail?.peaks : layer.peaks;
+  const peaks = detail && detail.blob === layer.blob ? detail.peaks : layer.peaks;
   const clip = clipBounds(layer);
   const geometry = useMemo(() => {
     if (!peaks?.length) return null;
