@@ -9,6 +9,7 @@ export type CloudTake = Omit<RecordingTake, 'blob'> & { audio?: CloudAudio };
 export type CloudLayer = Omit<Layer, 'blob' | 'takes'> & { audio?: CloudAudio; takes?: CloudTake[] };
 export interface CloudManifest extends Omit<SongContent, 'layers' | 'candidate'> {
   version: 1 | 2;
+  createdAt?: number;
   layers: CloudLayer[];
   candidate: CloudLayer | null;
 }
@@ -26,7 +27,7 @@ export async function hashAudio(blob: Blob) {
 export function manifestAudio(manifest: CloudManifest): CloudAudio[] {
   return [...manifest.layers, ...(manifest.candidate ? [manifest.candidate] : [])].flatMap((layer) => [...(layer.audio ? [layer.audio] : []), ...(layer.takes ?? []).flatMap((take) => take.audio ? [take.audio] : [])]);
 }
-export async function makeManifest(song: SavedSong, ownerId: string, upload: (path: string, blob: Blob) => Promise<void>, recovered = false): Promise<CloudManifest> {
+export async function makeManifest(song: Omit<SavedSong, 'createdAt'> & { createdAt?: number }, ownerId: string, upload: (path: string, blob: Blob) => Promise<void>, recovered = false): Promise<CloudManifest> {
   const uploaded = new Set<string>();
   async function convertTake(take: RecordingTake): Promise<CloudTake> {
     const { blob, ...rest } = take;
@@ -50,7 +51,7 @@ export async function makeManifest(song: SavedSong, ownerId: string, upload: (pa
   for (const layer of song.layers) layers.push(await convert(layer));
   const candidate = song.candidate ? await convert(song.candidate) : null;
   return { version: 2, title: recovered ? `${song.title} · Recovered version` : song.title,
-    artwork: song.artwork, archivedAt: song.archivedAt, deletedAt: song.deletedAt, layers, candidate, retakeLayerId: song.retakeLayerId, withDemo: song.withDemo, volume: song.volume, partName: song.partName,
+    artwork: song.artwork, createdAt: song.createdAt, archivedAt: song.archivedAt, deletedAt: song.deletedAt, layers, candidate, retakeLayerId: song.retakeLayerId, withDemo: song.withDemo, volume: song.volume, partName: song.partName,
     tempo: song.tempo, countIn: song.countIn, metronomeMode: song.metronomeMode };
 }
 

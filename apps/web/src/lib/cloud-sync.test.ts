@@ -97,6 +97,8 @@ test('cross-device open downloads all audio before installing the local song', a
   const id = await openCloudSong(copiedId, f.owner, f.remote);
   const reopened = (await getSong(id))!;
   assert.equal(reopened.ownerId, f.owner); assert.equal(reopened.candidate?.name, 'Voice');
+  assert.equal(reopened.createdAt, f.song.createdAt);
+  assert.equal((await getBackup(id))?.creationDateKnown, true);
   assert.deepEqual(await reopened.candidate!.blob!.arrayBuffer(), await f.song.candidate!.blob!.arrayBuffer());
   assert.equal((await getBackup(id))?.syncedLocalRevision, reopened.revision);
 });

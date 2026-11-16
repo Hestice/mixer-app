@@ -38,6 +38,7 @@ interface SongRow extends Lifecycle {
   layerCount: number;
   duration: number;
   hasTake: boolean;
+  createdAt?: number;
   updatedAt: number;
 }
 
@@ -46,7 +47,7 @@ function cloudRow(remote: CloudSong, local?: SongSummary): SongRow {
   const layers = content.layers.filter(layer => lifecycle(layer) === 'active');
   return {
     id: local?.id ?? `cloud-${remote.id}`, local, remote, editRemote: true,
-    title: content.title.trim() || 'Untitled song', artwork: content.artwork, updatedAt: Date.parse(remote.updated_at),
+    title: content.title.trim() || 'Untitled song', artwork: content.artwork, createdAt: content.createdAt, updatedAt: Date.parse(remote.updated_at),
     archivedAt: content.archivedAt, deletedAt: content.deletedAt,
     layerCount: layers.length, hasTake: !!content.candidate,
     duration: Math.max(0, ...layers.map(layer => clipBounds(layer).end), content.candidate ? clipBounds(content.candidate).end : 0),
@@ -122,14 +123,16 @@ function SongsCollection() {
   const localRows = visible.map((song): SongRow => {
     const link = cloud.links.find(item => item.id === song.id && item.ownerId === cloud.user?.id);
     const remote = cloud.remoteSongs.find(item => item.id === link?.remoteId);
+    // Older backups did not include a creation date. A downloaded copy records its install time locally.
+    const createdAt = remote?.content.createdAt ?? (!link || link.id === link.remoteId || link.creationDateKnown ? song.createdAt : undefined);
     const remoteAhead = !!link && !!remote && remote.revision > link.remoteRevision && song.revision <= link.syncedLocalRevision && !link.libraryEdit;
     if (remote && (remoteAhead || lifecycle(remote.content) === 'deleted'
-      || remote.content.archivedAt != null && remote.revision > (link?.remoteRevision ?? 0) && !link?.libraryEdit)) return { ...cloudRow(remote, song), link };
-    return { ...song, local: song, remote, link, editRemote: false };
+      || remote.content.archivedAt != null && remote.revision > (link?.remoteRevision ?? 0) && !link?.libraryEdit)) return { ...cloudRow(remote, song), createdAt, link };
+    return { ...song, createdAt, local: song, remote, link, editRemote: false };
   });
   const remoteRows = cloud.remoteSongs.filter(song => !cloud.links.some(link => link.ownerId === cloud.user?.id && link.remoteId === song.id && visible.some(local => local.id === link.id))).map(song => cloudRow(song));
   const catalogue = [...localRows, ...remoteRows];
-  const archiveRows = archiveSnapshot ?? catalogue.filter(row => lifecycle(row) === 'archived').sort((a, b) => b.updatedAt - a.updatedAt);
+  const archiveRows = archiveSnapshot ?? catalogue.filter(row => lifecycle(row) === 'archived');
   const hasArchived = archiveRows.length > 0;
   const rows = catalogue.filter(row => lifecycle(row) === 'active')
     .sort((a, b) => b.updatedAt - a.updatedAt);
