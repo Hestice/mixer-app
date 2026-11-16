@@ -204,3 +204,29 @@ test('auditioning from before an offset layer starts skips earlier parts without
   assert.equal(FakeContext.current.sources[0].playDuration, 2); assert.equal(engine.position, 18.96);
   engine.dispose();
 });
+
+
+test('seeking while paused keeps silence and playback resumes inside every trimmed layer on the shared clock', async () => {
+  const engine = new AudioEngine(); await engine.ready();
+  engine.addSamples('a',new Float32Array(1000),100); engine.addSamples('b',new Float32Array(1000),100);
+  const layers = [{id:'a',name:'A',kind:'recording' as const,enabled:true,volume:1,duration:10,trimStart:2,trimEnd:8,startAt:1}, {id:'b',name:'B',kind:'recording' as const,enabled:true,volume:1,duration:10,trimStart:1,trimEnd:8,startAt:3}];
+  engine.configureSession(layers); engine.seek(layers,4);
+  assert.equal(engine.position,4); assert.equal(engine.playing,false); assert.equal(FakeContext.current.sources.length,0);
+  await engine.play(layers);
+  assert.deepEqual(FakeContext.current.sources.map(source=>source.started),[[.04,5],[.04,2]]);
+  engine.seek(layers,5); engine.seek(layers,6);
+  assert.equal(engine.playing,true,'continuous scrubbing must not accidentally pause');
+  assert.deepEqual(FakeContext.current.sources.slice(-2).map(source=>source.started),[[.04,7],[.04,4]]);
+  engine.pause(); engine.configureSession(layers,6); assert.equal(engine.position,6);
+  engine.dispose();
+});
+test('recording from a nonzero cursor schedules delayed and already-running backing parts relative to that cursor', async () => {
+  const engine = new AudioEngine(); await engine.ready();
+  engine.addSamples('a',new Float32Array(1000),100); engine.addSamples('b',new Float32Array(1000),100);
+  const layers = [{id:'a',name:'A',kind:'recording' as const,enabled:true,volume:1,duration:10,trimStart:2,trimEnd:7,startAt:1}, {id:'b',name:'B',kind:'recording' as const,enabled:true,volume:1,duration:10,trimStart:1,trimEnd:4,startAt:5}];
+  engine.configureSession(layers,3); engine.playAt(layers,10,3);
+  assert.deepEqual(FakeContext.current.sources.map(source=>source.started),[[10,4],[12,1]]);
+  assert.deepEqual(FakeContext.current.sources.map(source=>source.playDuration),[3,3]);
+  FakeContext.current.currentTime=11; assert.equal(engine.position,4);
+  engine.dispose();
+});

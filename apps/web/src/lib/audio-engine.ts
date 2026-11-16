@@ -52,10 +52,11 @@ export class AudioEngine {
     return buffer.duration;
   }
 
-  configureSession(layers: Layer[]) {
+  configureSession(layers: Layer[], position = 0) {
     this.reset();
     this.looping = false;
     this.loopDuration = Math.max(0, ...layers.map((layer) => clipBounds({ ...layer, duration: layer.duration ?? this.buffers.get(layer.id)?.duration }).end));
+    this.pausedAt = Math.max(0, position);
   }
 
   removeRecording(id: string) { this.buffers.delete(id); }
@@ -86,10 +87,18 @@ export class AudioEngine {
   }
 
   /** Schedule backing tracks at the exact same audio time as microphone capture. */
-  playAt(layers: Layer[], when: number) {
+  playAt(layers: Layer[], when: number, position = 0) {
     if (!this.context) throw new Error('Audio is not ready.');
     this.stopSources();
-    this.start(layers, when, 0);
+    this.start(layers, when, position);
+  }
+
+  /** Move the shared cursor without starting playback when paused. */
+  seek(layers: Layer[], position: number) {
+    const wasPlaying = this.playing;
+    this.pause();
+    this.pausedAt = Math.max(0, position);
+    if (wasPlaying && this.context && position < this.loopDuration) this.start(layers, this.context.currentTime + .04, this.pausedAt);
   }
 
   private start(layers: Layer[], when: number, offset: number) {

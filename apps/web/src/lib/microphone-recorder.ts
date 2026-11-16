@@ -44,6 +44,8 @@ export class MicrophoneRecorder {
     stream.getAudioTracks().forEach((track) => { track.onended = () => onError(new Error('The microphone disconnected. Reconnect it to try again.')); });
   }
 
+  get isCapturing() { return this.capturing; }
+  get inputLatency() { return (this.stream.getAudioTracks()[0]?.getSettings() as MediaTrackSettings & { latency?: number })?.latency; }
   get sampleRate() { return this.context.sampleRate; }
   start(when: number) {
     this.chunks = []; this.capturing = true;

@@ -24,7 +24,12 @@ export function appendTake(layer: Layer, take: RecordingTake): Layer {
   return selectTake({ ...layer, takes: [...takesOf(layer), take] }, take.id);
 }
 export function editClip(layer: Layer, patch: ClipEdits): Layer {
-  const bounds = clipBounds({ ...layer, ...patch });
+  const previous = clipBounds(layer);
+  const next = clipBounds({ ...layer, ...patch });
+  // Cutting silence off the front must not pull the performance earlier in the song.
+  const startAt = patch.trimStart !== undefined && patch.startAt === undefined
+    ? Math.max(0, previous.startAt + next.trimStart - previous.trimStart) : next.startAt;
+  const bounds = clipBounds({ ...layer, ...patch, startAt });
   const edits = { trimStart: bounds.trimStart, trimEnd: bounds.trimEnd, startAt: bounds.startAt };
   if (!layer.recorded) return { ...layer, ...edits };
   const takeId = layer.takeId ?? layer.id;
