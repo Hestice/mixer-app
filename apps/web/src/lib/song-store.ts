@@ -16,6 +16,7 @@ export interface SongContent extends Lifecycle {
   volume: number;
   partName: string;
   tempo: number;
+  beatOffset?: number;
   countIn: boolean;
   metronomeMode: MetronomeMode;
 }

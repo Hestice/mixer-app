@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lifecycle, layerLifecycleEdit, type LifecycleAction } from '../lib/library-entry';
-import { appendTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
+import { appendTake, clipBounds, discardDraftTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
 import type { ClipEdits, LayerColor } from '../lib/session';
 import { RecordingReadError, readRecording, recordingBlob, recordingCopies, replaceLayerAudio } from '../lib/recording-storage';
 import type { RecordArt } from '../lib/record-art';
@@ -11,7 +11,7 @@ import { recordingDelay, recordedPlacement, recordingSchedule } from '../lib/rec
 import { AudioEngine } from '../lib/audio-engine';
 import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
-import { Metronome, canSoundClick, metronomeBeatAt, type MetronomeMode } from '../lib/metronome';
+import { Metronome, canSoundClick, metronomeBeatAt, nextBeatDelay, type MetronomeMode } from '../lib/metronome';
 import { encodeWavBytes } from '../lib/wav';
 import { exportSong, songFilename } from '../lib/song-export';
 import { useCloud } from '../components/cloud-provider';
@@ -76,6 +76,8 @@ export function useStudio(startInWorkspace = false) {
   const [soloId, setSoloId] = useState<string | null>(null);
   const [partName, setPartName] = useState('Guitar');
   const [tempo, setTempo] = useState(84);
+  const [beatOffset, setBeatOffset] = useState<number>();
+  const [beatAlignmentStatus, setBeatAlignmentStatus] = useState('');
   const [countIn, setCountIn] = useState(true);
   const [metronomeMode, setMetronomeMode] = useState<MetronomeMode>('visual');
   const [headphones, setHeadphones] = useState(false);
@@ -97,6 +99,10 @@ export function useStudio(startInWorkspace = false) {
   const disposed = useRef(false);
   const hasRecordings = layers.some((layer) => layer.recorded) || !!candidate?.recorded;
   const locked = accountBlocked || (workspace && !localReady) || ['requesting', 'countdown', 'recording', 'processing'].includes(recordingState);
+  const nextDraft = useMemo(() => {
+    if (!candidate?.recorded || recordingState !== 'review') return candidate;
+    return discardDraftTake(candidate, layers.find(layer => layer.id === retakeLayerId));
+  }, [candidate, layers, recordingState, retakeLayerId]);
   const backingLayers = layers.filter((layer) => layer.id !== retakeLayerId);
   const mix = [...(candidate && previewCandidate ? backingLayers : layers), ...(candidate && (!workspace || recordingState === 'review' && previewCandidate) ? [{ ...candidate, enabled: previewCandidate }] : [])].map((layer) => ({
     ...layer, enabled: soloId ? layer.id === soloId : layer.enabled,
@@ -104,8 +110,8 @@ export function useStudio(startInWorkspace = false) {
   const mixRef = useRef(mix);
   mixRef.current = mix;
 
-  const content = useMemo<SongContent>(() => ({ title, artwork, layers: savedLayers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode }),
-    [title, artwork, savedLayers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode]);
+  const content = useMemo<SongContent>(() => ({ title, artwork, layers: savedLayers, candidate, retakeLayerId: candidate ? retakeLayerId : undefined, withDemo, volume, partName, tempo, beatOffset, countIn, metronomeMode }),
+    [title, artwork, savedLayers, candidate, retakeLayerId, withDemo, volume, partName, tempo, beatOffset, countIn, metronomeMode]);
   const contentRef = useRef(content);
   contentRef.current = content;
   const saveState = !localReady ? 'loading' : saveError ? 'error' : savedContent === content ? 'saved' : 'saving';
@@ -143,7 +149,7 @@ export function useStudio(startInWorkspace = false) {
         writerRef.current = new SongWriter(id, song.revision);
         setArtwork(song.artwork); setTitle(song.title); setLayers(song.layers); setCandidate(song.candidate); setRetakeLayerId(song.retakeLayerId);
         setWithDemo(song.withDemo); setVolumeState(song.volume); setPartName(song.partName);
-        setTempo(song.tempo); setCountIn(song.countIn);
+        setTempo(song.tempo); setBeatOffset(song.beatOffset); setCountIn(song.countIn);
         // Headphones must be confirmed again before any audible click.
         setMetronomeMode(song.metronomeMode === 'sound' ? 'visual' : song.metronomeMode);
         setRecordingState(song.candidate ? 'review' : 'idle'); setPreviewCandidate(false);
@@ -196,11 +202,11 @@ export function useStudio(startInWorkspace = false) {
     } finally { if (!disposed.current) setBusy(false); }
   }
 
-  async function prepareAudio(includeCandidate = previewCandidate) {
+  async function prepareAudio(includeCandidate = previewCandidate, only?: Layer) {
     const run = runRef.current;
     const engine = getEngine();
-    if (!workspace || withDemo) await engine.loadDemo();
-    const prepared = [...(candidate && includeCandidate ? backingLayers : layers), ...(candidate && includeCandidate ? [candidate] : [])];
+    if (!workspace || withDemo && !only?.recorded) await engine.loadDemo();
+    const prepared = only ? [only] : [...(candidate && includeCandidate ? backingLayers : layers), ...(candidate && includeCandidate ? [candidate] : [])];
     for (const layer of prepared) {
       if (layer.recorded && decodedRecordings.current.get(layer.id) !== (layer.takeId ?? layer.id)) {
         try { await engine.addRecording(layer.id, layer.blob, layer.name); }
@@ -283,6 +289,7 @@ export function useStudio(startInWorkspace = false) {
 
   function pausePlayback() {
     const engine = getEngine();
+    if (engine.playing && metronomePreview && beatOffset !== undefined) stopMetronome();
     engine.pause();
     setPlaying(false);
     setPosition(engine.position);
@@ -292,6 +299,7 @@ export function useStudio(startInWorkspace = false) {
   function stopPlayback() {
     if (locked) return;
     playbackRequest.current++;
+    if (metronomePreview && beatOffset !== undefined) stopMetronome();
     getEngine().reset();
     setPlaying(false);
     setPosition(0);
@@ -307,7 +315,7 @@ export function useStudio(startInWorkspace = false) {
     const request = ++playbackRequest.current;
     startingPlayback.current = true;
     setBusy(true);
-    if (keptMix) stopMetronome();
+    if (keptMix && beatOffset === undefined) stopMetronome();
     try {
       const [prepared] = await Promise.all([prepareAudio(!keptMix && previewCandidate), cue?.()]);
       if (request !== playbackRequest.current || disposed.current) return;
@@ -319,6 +327,8 @@ export function useStudio(startInWorkspace = false) {
       }
       engine.volume(volume);
       setPlaying(true);
+      const clock = engine.playbackClock;
+      if (clock && metronomePreview && beatOffset !== undefined) startBeatPreview(clock.context);
     } catch (reason) {
       if (request === playbackRequest.current && !disposed.current) report(reason);
     } finally {
@@ -335,7 +345,13 @@ export function useStudio(startInWorkspace = false) {
     const position = Math.max(0, Math.min(3600, value));
     const engine = getEngine();
     // Sources are already decoded during playback. Seeking never starts a paused song.
+    const followBeat = engine.playing && metronomePreview && beatOffset !== undefined;
     engine.seek(mixRef.current, position);
+    if (followBeat) {
+      const clock = engine.playbackClock;
+      if (clock) startBeatPreview(clock.context);
+      else stopMetronome();
+    }
     setPosition(position); setPlaying(engine.playing);
   }
 
@@ -464,16 +480,45 @@ export function useStudio(startInWorkspace = false) {
     }
   }
 
+  function replaceDraft(next: Layer | null) {
+    if (candidate) {
+      beginEdit();
+      const engine = getEngine();
+      engine.configureSession(layers, engine.position);
+      decodedRecordings.current.delete(candidate.id);
+    }
+    setCandidate(next);
+    setPreviewCandidate(false);
+    setSoloId(null);
+    if (!next) {
+      setRetakeLayerId(undefined);
+      setRecordingState(recorderRef.current ? 'ready' : 'idle');
+    }
+  }
+
+  function discardTake() {
+    if (!candidate || candidate === nextDraft || locked || busy) return false;
+    replaceDraft(nextDraft);
+    return true;
+  }
+
+  function cancelRetake() {
+    if (!retakeLayerId || locked || busy) return;
+    replaceDraft(null);
+    setPartName(layers.length === 1 ? 'Vocals' : `Layer ${layers.length + 1}`);
+  }
+
   function recordAnother(id?: string) {
     if (locked || busy || (id && candidate)) return;
-    const layer = id ? layers.find((item) => item.id === id) : candidate;
-    if (!layer) return;
-    if (id) { setRetakeLayerId(id); setCandidate(layer); }
-    setPartName(layer.name); setPreviewCandidate(false);
-    if (recorderRef.current) {
-      stopMetronome(); getEngine().pause(); setPlaying(false); setError('');
-      setRecordingState('ready');
-    } else void enableMicrophone(inputDevice, layer);
+    const layer = id ? layers.find(item => item.id === id) : candidate;
+    if (!layer?.recorded) return;
+    if (id) setRetakeLayerId(id);
+    setPartName(layer.name);
+    setPreviewCandidate(false);
+    stopMetronome();
+    pausePlayback();
+    setError('');
+    setRecordingState(recorderRef.current ? 'ready' : 'idle');
   }
 
   function enterWorkspace(useDemo: boolean) {
@@ -492,8 +537,11 @@ export function useStudio(startInWorkspace = false) {
     setMetronomePreview(false); setBeatIndex(-1);
   }
 
-  function startVisualBeat(context: AudioContext, when: number, beatSeconds: number) {
-    beatTimer.current = setInterval(() => setBeatIndex(metronomeBeatAt(context.currentTime, when, beatSeconds)), 30);
+  function startVisualBeat(context: AudioContext, when: number, beatSeconds: number, until = Infinity) {
+    beatTimer.current = setInterval(() => {
+      if (context.currentTime >= until) stopMetronome();
+      else setBeatIndex(metronomeBeatAt(context.currentTime, when, beatSeconds));
+    }, 30);
   }
 
   function releaseMicrophone() {
@@ -568,8 +616,11 @@ export function useStudio(startInWorkspace = false) {
       const take: Layer = { ...placement, id, name: partName.trim() || `Layer ${layers.length + 1}`, kind: 'recording', enabled: true, volume: .85, recorded: true, blob: recordingBlob(encodeWavBytes([samples], sampleRate)), duration, peaks: getEngine().peaks(id) };
       getEngine().configureSession([...backingLayers, take], capturePlacement.current.position);
       setPosition(capturePlacement.current.position);
-      // A retry adds an alternative; the previous recording and its edits remain intact.
-      const next = candidate?.recorded ? appendTake(candidate, { id, blob: take.blob, duration, peaks: take.peaks, ...placement }) : { ...take, takeId: id, takes: takesOf(take) };
+      // Create the retake draft only after the microphone returns actual samples.
+      const original = candidate ?? layers.find(layer => layer.id === retakeLayerId);
+      const next = original?.recorded
+        ? appendTake(original, { id, blob: take.blob, duration, peaks: take.peaks, ...placement })
+        : { ...take, takeId: id, takes: takesOf(take) };
       decodedRecordings.current.delete(next.id);
       editHistory.current = []; setUndoCount(0);
       setCandidate(next); setPreviewCandidate(true); setSoloId(null); setRecordingState('review');
@@ -600,19 +651,19 @@ export function useStudio(startInWorkspace = false) {
       capturePlacement.current = { position, delay: backingLayers.some(layer => layer.enabled && layer.volume > 0) || canSoundClick(metronomeMode, headphones) ? recordingDelay(context, recorder.inputLatency) : 0 };
       setRecordFrom(position);
       engine.configureSession(backingLayers, position);
-      const { beatSeconds, countAt, startAt } = recordingSchedule(context.currentTime, tempo, countIn);
+      const { beatSeconds, startAt, beatAt } = recordingSchedule(context.currentTime, tempo, countIn, position, beatOffset);
       recorder.start(startAt);
       engine.volume(volume);
       engine.playAt(backingLayers, startAt, position);
       metronomeRef.current = new Metronome(context);
-      const beatAt = countAt + OUTPUT_DELAY;
       metronomeRef.current.start(beatAt, tempo, canSoundClick(metronomeMode, headphones));
       if (metronomeMode !== 'off') startVisualBeat(context, beatAt, beatSeconds);
       const update = () => {
         const time = context.currentTime;
         const seconds = time - startAt;
         if (seconds < 0) {
-          setCountdown(countIn && time >= countAt ? Math.min(4, Math.ceil(-seconds / beatSeconds)) : 0);
+          const beat = metronomeBeatAt(time, beatAt, beatSeconds);
+          setCountdown(countIn && beat >= 0 ? Math.max(0, 4 - beat) : 0);
         } else {
           setRecordingState('recording'); setCountdown(0); setElapsed(seconds); setPosition(position + seconds);
           setLivePeaks((current) => [...current.slice(-63), Math.min(1, levelRef.current * 3)]);
@@ -652,6 +703,53 @@ export function useStudio(startInWorkspace = false) {
     setRecordingState(candidate ? 'review' : 'idle');
   }
 
+  async function alignBeat(id: string) {
+    const layer = layers.find(item => item.id === id);
+    if (!layer || locked || busy) return;
+    const run = runRef.current;
+    setBusy(true);
+    setBeatAlignmentStatus('Finding the beat…');
+    try {
+      const builtInStem = !layer.recorded && (demoLayers.some(item => item.id === id) || id === harmonyLayer.id);
+      const { startAt, trimStart } = clipBounds(layer);
+      const [prepared] = builtInStem ? [layer] : await prepareAudio(false, layer);
+      if (run !== runRef.current || disposed.current) return;
+      // The original demo stems were generated on the same 84 BPM grid.
+      const alignment = builtInStem
+        ? { tempo: 84, beatOffset: nextBeatDelay(0, 84, startAt - trimStart) }
+        : getEngine().measureBeat(prepared);
+      if (!alignment) {
+        setBeatAlignmentStatus(`Couldn’t find a steady beat in ${layer.name}. Try a layer with a clearer rhythm.`);
+        return;
+      }
+      stopMetronome();
+      setTempo(alignment.tempo);
+      setBeatOffset(alignment.beatOffset);
+      setBeatAlignmentStatus(`Aligned to ${layer.name} at ${alignment.tempo} BPM.`);
+    } catch (reason) {
+      if (!disposed.current) setBeatAlignmentStatus(reason instanceof Error ? reason.message : 'Could not read audio for beat alignment.');
+    } finally {
+      if (!disposed.current) setBusy(false);
+    }
+  }
+
+  function startBeatPreview(context: AudioContext) {
+    stopMetronome();
+    const engine = getEngine();
+    const clock = engine.playbackClock;
+    let when = context.currentTime + .08;
+    let until = Infinity;
+    if (clock && beatOffset !== undefined) {
+      const outputStart = clock.startTime + OUTPUT_DELAY;
+      when += nextBeatDelay(when - outputStart, tempo, beatOffset);
+      until = outputStart + engine.duration;
+    }
+    metronomeRef.current = new Metronome(context);
+    metronomeRef.current.start(when, tempo, canSoundClick(metronomeMode, headphones), until);
+    setMetronomePreview(true);
+    startVisualBeat(context, when, 60 / tempo, until);
+  }
+
   async function previewMetronome() {
     if (locked || busy) return;
     if (metronomePreview) { stopMetronome(); return; }
@@ -660,11 +758,7 @@ export function useStudio(startInWorkspace = false) {
     try {
       const context = await getEngine().ready();
       if (run !== runRef.current || disposed.current) return;
-      const when = context.currentTime + .08;
-      metronomeRef.current = new Metronome(context);
-      metronomeRef.current.start(when, tempo, canSoundClick(metronomeMode, headphones));
-      setMetronomePreview(true);
-      startVisualBeat(context, when, 60 / tempo);
+      startBeatPreview(context);
     } catch (reason) { report(reason); }
     finally { setBusy(false); }
   }
@@ -723,12 +817,17 @@ export function useStudio(startInWorkspace = false) {
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
     togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
-    beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother,
+    beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, cancelRetake, discardTake, canDiscardTake: nextDraft !== candidate,
     enableMicrophone, record, stopRecording, cancelCountIn, returnToTake, disconnectMicrophone, download, downloadSong, exportStatus, exportBusy, reviewTake,
-    partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, devices, inputDevice, previewMetronome,
+    partName, setPartName, tempo, beatOffset, beatAlignmentStatus, alignBeat, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, devices, inputDevice, previewMetronome,
     microphoneConnected: microphoneLabel !== null,
     microphoneLabel: microphoneLabel ?? 'Microphone not connected',
-    setTempo: (value: number) => { stopMetronome(); setTempo(Math.max(40, Math.min(240, Number.isFinite(value) ? value : 84))); },
+    setTempo: (value: number) => {
+      stopMetronome();
+      setBeatOffset(undefined);
+      setBeatAlignmentStatus('');
+      setTempo(Math.max(40, Math.min(240, Number.isFinite(value) ? value : 84)));
+    },
     setMetronomeMode: (mode: MetronomeMode) => { stopMetronome(); setMetronomeMode(mode); },
     setHeadphones: (value: boolean) => { stopMetronome(); setHeadphones(value); if (!value && metronomeMode === 'sound') setMetronomeMode('visual'); },
     changeInput: (id: string) => { setInputDevice(id); void enableMicrophone(id); },

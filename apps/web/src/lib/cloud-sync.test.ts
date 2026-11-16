@@ -245,12 +245,13 @@ test('archived and directly deleted layers retain takes, timing and color in clo
   const f = await fixture(), now = Date.now();
   const first = editClip(f.song.candidate!, { trimStart: .1, startAt: 3 });
   const alternate = appendTake(first, { id: 'replacement', duration: 2, blob: encodeWav(new Float32Array([.3, .4]), 44100) });
-  await saveSong(f.id, 1, { ...f.song, layers: [
+  await saveSong(f.id, 1, { ...f.song, beatOffset: .28, layers: [
     { ...alternate, archivedAt: now, color: 'clay' },
     { ...first, id: 'deleted', deletedAt: now, color: 'teal' },
   ], candidate: null });
   await syncSong(f.id, f.owner, f.remote);
   const restored = await downloadManifest(f.songs.get(f.id)!.content, f.owner, f.remote.download);
+  assert.equal(restored.beatOffset, .28);
   assert.equal(restored.layers[0].archivedAt, now);
   assert.equal(restored.layers[0].takes?.length, 2);
   assert.equal(selectTake(restored.layers[0], first.id).startAt, 3);

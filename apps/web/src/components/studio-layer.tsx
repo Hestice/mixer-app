@@ -1,6 +1,6 @@
 import { useId, useState, type ComponentPropsWithoutRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Download, LoaderCircle, Mic, Pause, Play, Scissors, Volume2 } from 'lucide-react';
+import { Check, ChevronDown, Download, LoaderCircle, Mic, Paintbrush, Pause, Play, Scissors, Volume2 } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
 import { layerColors, type Layer, type LayerColor } from '../lib/session';
 import { ClipEditor, TakePicker } from './clip-editor';
@@ -52,7 +52,7 @@ export function LayerOptions({ id, layer, studio, span, onRetake, cueing, onTogg
         <DropdownMenu.Root modal={false}>
           <DropdownMenu.Trigger asChild>
             <LayerIconButton label={`${layer.name} color`} hint="Layer color" disabled={disabled}>
-              <span className="studio-layer-swatch" data-layer-color={color} aria-hidden="true" />
+              <span className="studio-layer-paint" data-layer-color={color} aria-hidden="true"><Paintbrush /></span>
             </LayerIconButton>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>

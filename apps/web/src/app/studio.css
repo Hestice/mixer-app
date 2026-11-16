@@ -136,6 +136,7 @@
 .studio-timing .text-button { font-size: 11px; }
 .studio-capture-preferences { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 16px; color: #536447; }
 .studio-capture-preferences label { white-space: nowrap; }
+.studio-cancel-retake { margin-left: auto; font-size: 11px; }
 .studio-count-in-overlay {
   position: fixed;
   inset: 0;
@@ -199,6 +200,10 @@
   .studio-beat-pulse { opacity: .48; }
   .studio-beat-pulse[data-side=left]::after,.studio-beat-pulse[data-side=right]::before { opacity: .24; }
 }
+.studio-beat-align { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 10px; }
+.studio-beat-align .studio-field { flex: 1 1 94px; min-width: 0; margin: 0; }
+.studio-beat-align .button { padding: 8px 10px; font-size: 11px; white-space: nowrap; }
+.studio-beat-alignment-status:empty { display: none; }
 .studio-beats { display: flex; justify-content: center; gap: 12px; padding: 20px 0; }
 .studio-beats>span { display: grid; place-items: center; width: 28px; height: 28px; background: #e8eddf; color: #798570; border-radius: 50%; font-size: 11px; }
 .studio-beats>span.active { background: #60794d; color: white; }
@@ -221,6 +226,7 @@
 .studio-review-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }.studio-review-buttons .button { padding: 10px 12px; font-size: 11px; }
 .studio-take-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-top: 16px; }
 .studio-take-actions .text-button { font-size: 11px; }
+.studio-take-actions .studio-discard-take { color: #913c34; }
 .studio-capture-footnote { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 22px 0 0; }
 @keyframes studio-track-in { from { transform: translateY(8px); opacity: .4; } to { transform: translateY(0); opacity: 1; } }
 @media (max-width: 1000px) {
@@ -473,6 +479,16 @@
 [data-layer-color=plum] { --layer-tint: #846691; }
 [data-layer-color=clay] { --layer-tint: #aa655a; }
 [data-layer-color=ochre] { --layer-tint: #9b773e; }
+.studio-layer-paint {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--layer-tint) 65%, #f6f8f0);
+  border-radius: 6px;
+  color: #263529;
+  background: color-mix(in srgb, var(--layer-tint) 32%, #f6f8f0);
+}
 .studio-layer-swatch { display: block; width: 13px; height: 13px; border: 1px solid #0002; border-radius: 50%; background: var(--layer-tint); }
 .studio-layer-color-check { display: flex; margin-left: auto; }
 .timeline-row[data-layer-color] .clip-body {

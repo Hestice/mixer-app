@@ -1,4 +1,5 @@
 import { readRecording } from './recording-storage';
+import { estimateBeatAlignment } from './beat-alignment';
 import { createSongOutput } from './audio-output';
 import { clipBounds, playbackWindow } from './clip-edits';
 import { extractPeaks, type Layer } from './session';
@@ -70,6 +71,14 @@ export class AudioEngine {
   }
 
   get duration() { return this.loopDuration; }
+  get playbackClock() {
+    return this.context && this.playing ? { context: this.context, startTime: this.startedAt } : null;
+  }
+
+  measureBeat(layer: Layer) {
+    const buffer = this.buffers.get(layer.id);
+    return buffer ? estimateBeatAlignment(buffer, clipBounds({ ...layer, duration: buffer.duration })) : null;
+  }
   peaks(id: string) {
     const buffer = this.buffers.get(id);
     return buffer ? extractPeaks(buffer.getChannelData(0)) : [];
