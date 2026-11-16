@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useSyncExternalStore, type RefObject } from 'react';
-import { Activity, ArrowLeft, AudioLines, Check, ChevronDown, Download, Headphones, LoaderCircle, Mic, MicOff,
-  Music2, Pause, Play, RotateCcw, ScanLine, SlidersHorizontal, Square, Timer, Trash2, X } from 'lucide-react';
+import { ArrowLeft, AudioLines, Check, ChevronDown, Download, Headphones, LoaderCircle, Mic, MicOff,
+  Music2, Pause, Play, RotateCcw, ScanLine, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
 import { timeLabel, type Layer } from '../lib/session';
 import { TakePicker } from './clip-editor';
@@ -197,16 +197,16 @@ export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpe
         <ActionIcon size={16} fill={recording ? 'currentColor' : 'none'} aria-hidden="true" />{action}
       </button>
       {showCaptureControls && <div className="studio-capture-preferences">
-        {setup && <>
-          <button className="studio-toolbar-button studio-capture-setting" type="button" title="Four beats before recording"
-            aria-pressed={studio.countIn} disabled={studio.busy} onClick={() => studio.setCountIn(!studio.countIn)}>
-            <Timer size={14} aria-hidden="true" />Count-in
+        {setup && <div className="studio-capture-switches">
+          <button className="studio-capture-switch" type="button" role="switch" title="Four beats before recording"
+            aria-checked={studio.countIn} disabled={studio.busy} onClick={() => studio.setCountIn(!studio.countIn)}>
+            <span className="studio-switch-track" aria-hidden="true" />Count-in
           </button>
-          <button className="studio-toolbar-button studio-capture-setting" type="button" aria-label="Beat during take"
-            aria-pressed={beatOn} disabled={studio.busy} onClick={() => studio.setMetronomeMode(beatOn ? 'off' : 'visual')}>
-            <Activity size={14} aria-hidden="true" />Beat
+          <button className="studio-capture-switch" type="button" role="switch" aria-label="Beat during take"
+            aria-checked={beatOn} disabled={studio.busy} onClick={() => studio.setMetronomeMode(beatOn ? 'off' : 'visual')}>
+            <span className="studio-switch-track" aria-hidden="true" />Beat
           </button>
-        </>}
+        </div>}
         {setup && studio.candidate && <button className="studio-toolbar-button" type="button" disabled={studio.busy} onClick={() => {
           studio.returnToTake();
           recordButton.current?.focus({ preventScroll: true });
