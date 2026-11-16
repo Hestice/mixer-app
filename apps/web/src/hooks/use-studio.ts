@@ -94,8 +94,9 @@ export function useStudio(startInWorkspace = false) {
   const stoppingRef = useRef(false);
   const capturePlacement = useRef({ position: 0, delay: 0 });
   const [recordFrom, setRecordFrom] = useState(0);
-  const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const beatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const updateRecording = useRef<(() => void) | null>(null);
+  const updateBeat = useRef<(() => void) | null>(null);
+  const lastClockTick = useRef(0);
   const disposed = useRef(false);
   const hasRecordings = layers.some((layer) => layer.recorded) || !!candidate?.recorded;
   const locked = accountBlocked || (workspace && !localReady) || ['requesting', 'countdown', 'recording', 'processing'].includes(recordingState);
@@ -243,19 +244,26 @@ export function useStudio(startInWorkspace = false) {
     engineRef.current?.sync(mix);
   }, [layers, candidate, previewCandidate, soloId, playing, recordingState, workspace]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const advanceClock = useCallback((fromDetachedTab = false) => {
+    if (disposed.current || (fromDetachedTab && !document.hidden)) return;
+    const now = performance.now();
+    if (now - lastClockTick.current < 30) return;
+    lastClockTick.current = now;
+    if (updateRecording.current) updateRecording.current();
+    else setPosition(engineRef.current?.position ?? 0);
+    updateBeat.current?.();
+    setPlaying(engineRef.current?.playing ?? false);
+  }, []);
+
   useEffect(() => {
     disposed.current = false;
     if (workspace && !engineRef.current) getEngine().configureSession(layers);
-    const interval = setInterval(() => {
-      if (!recorderRef.current?.isCapturing) setPosition(engineRef.current?.position ?? 0);
-      setPlaying(engineRef.current?.playing ?? false);
-    }, 80);
+    const interval = setInterval(advanceClock, 40);
     return () => {
       disposed.current = true;
       clearInterval(interval);
       runRef.current++;
-      if (recordingTimer.current) clearInterval(recordingTimer.current);
-      if (beatTimer.current) clearInterval(beatTimer.current);
+      updateRecording.current = updateBeat.current = null;
       recorderRef.current?.dispose(); recorderRef.current = null;
       metronomeRef.current?.stop();
       engineRef.current?.dispose();
@@ -557,17 +565,16 @@ export function useStudio(startInWorkspace = false) {
 
   function stopMetronome(keepPreview = false) {
     metronomeRef.current?.stop();
-    if (beatTimer.current) clearInterval(beatTimer.current);
-    beatTimer.current = null;
+    updateBeat.current = null;
     if (!keepPreview) setMetronomePreview(false);
     setBeatIndex(-1);
   }
 
   function startVisualBeat(context: AudioContext, when: number, beatSeconds: number, until = Infinity) {
-    beatTimer.current = setInterval(() => {
+    updateBeat.current = () => {
       if (context.currentTime >= until) stopMetronome();
       else setBeatIndex(metronomeBeatAt(context.currentTime, when, beatSeconds));
-    }, 30);
+    };
   }
 
   function releaseMicrophone() {
@@ -627,7 +634,7 @@ export function useStudio(startInWorkspace = false) {
     stoppingRef.current = true;
     const run = runRef.current;
     const sampleRate = recorder.sampleRate;
-    if (recordingTimer.current) clearInterval(recordingTimer.current);
+    updateRecording.current = null;
     stopMetronome(); getEngine().pause(); setPlaying(false); setRecordingState('processing');
     let receivedAudio = false;
     try {
@@ -684,6 +691,7 @@ export function useStudio(startInWorkspace = false) {
       metronomeRef.current = new Metronome(context);
       metronomeRef.current.start(beatAt, tempo, canSoundClick(metronomeMode, headphones));
       if (metronomeMode !== 'off') startVisualBeat(context, beatAt, beatSeconds);
+      let lastPeakAt = startAt - .08;
       const update = () => {
         const time = context.currentTime;
         const seconds = time - startAt;
@@ -692,11 +700,14 @@ export function useStudio(startInWorkspace = false) {
           setCountdown(countIn && beat >= 0 ? Math.max(0, 4 - beat) : 0);
         } else {
           setRecordingState('recording'); setCountdown(0); setElapsed(seconds); setPosition(position + seconds);
-          setLivePeaks((current) => [...current.slice(-63), Math.min(1, levelRef.current * 3)]);
+          if (time - lastPeakAt >= .075) {
+            lastPeakAt = time;
+            setLivePeaks((current) => [...current.slice(-63), Math.min(1, levelRef.current * 3)]);
+          }
         }
       };
       update();
-      recordingTimer.current = setInterval(update, 80);
+      updateRecording.current = update;
     } catch (reason) {
       if (run === runRef.current && !disposed.current) {
         recorder.cancel(); stopMetronome(); getEngine().pause(); setPlaying(false);
@@ -707,8 +718,7 @@ export function useStudio(startInWorkspace = false) {
 
   function cancelPendingRecording() {
     runRef.current++;
-    if (recordingTimer.current) clearInterval(recordingTimer.current);
-    recordingTimer.current = null;
+    updateRecording.current = null;
     recorderRef.current?.cancel();
     stopMetronome(); getEngine().pause(); setPlaying(false); setCountdown(0);
   }
@@ -840,7 +850,7 @@ export function useStudio(startInWorkspace = false) {
     songId, cloudStatus: cloud.status(songId, localRevision), cloudError: cloud.errors[songId], retryCloud: cloud.retry,
     title, setTitle, artwork, setArtwork, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, audioError, retrySave: () => persistSong(), openMySongs,
     layers, archivedLayers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
-    elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
+    elapsed, position, recordFrom, advanceClock, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
     togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, beginScrub, scrubSong, endScrub, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, cancelRetake, discardTake, canDiscardTake: nextDraft !== candidate,

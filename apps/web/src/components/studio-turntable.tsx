@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useEffectEvent, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import type { useTurntableMotion } from '../hooks/use-turntable-motion';
 import type { Studio } from '../hooks/use-studio';
@@ -45,6 +45,17 @@ type TurntableProps = {
 export function StudioTurntable({ studio, span, duration, compact, motion, onTogglePlayback, onStopPlayback, onEdit, onToggleCompact }: TurntableProps) {
   const { record, arm, cueing } = motion;
   const gesture = useRef<Gesture | null>(null);
+  const finishScrub = useEffectEvent(() => {
+    if (!gesture.current?.scratching) return;
+    gesture.current = null;
+    studio.endScrub();
+  });
+  useEffect(() => {
+    const leave = () => finishScrub();
+    window.addEventListener('pagehide', leave);
+    return () => { window.removeEventListener('pagehide', leave); leave(); };
+  }, []);
+
   const disabled = studio.locked || studio.busy;
   const canPlay = !!studio.layers.length || studio.playing;
 

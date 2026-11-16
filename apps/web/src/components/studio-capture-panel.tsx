@@ -167,9 +167,10 @@ type CapturePanelProps = {
   onOpenChange: (open: boolean) => void;
   onCapture: () => void;
   onDiscard: () => void;
+  detached?: boolean;
 };
 
-export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpenChange, onCapture, onDiscard }: CapturePanelProps) {
+export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpenChange, onCapture, onDiscard, detached = false }: CapturePanelProps) {
   const narrow = useSyncExternalStore(subscribeToWidth, readNarrow, serverNarrow);
   const [beatLayerId, setBeatLayerId] = useState('');
   const state = studio.recordingState;
@@ -178,7 +179,7 @@ export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpe
   const take = state === 'review' ? studio.candidate : null;
   const retaking = !!studio.retakeLayerId;
   const hasOptions = setup || recording || !!take || state === 'requesting';
-  const expanded = hasOptions && (!narrow || (open ?? !!take));
+  const expanded = hasOptions && (detached || !narrow || (open ?? !!take));
   const partName = studio.layers.find(layer => layer.id === studio.retakeLayerId)?.name ?? studio.candidate?.name;
   const title = take ? 'Review take' : recording ? 'Recording' : retaking ? 'Record a retake' : 'Record a layer';
   const action = {
@@ -201,7 +202,7 @@ export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpe
         <span className="studio-mic-icon" aria-hidden="true">{take || recording ? <AudioLines size={20} /> : <Mic size={20} />}</span>
         <div className="studio-capture-title">
           <h2 id="capture-title">{title}</h2>
-          {hasOptions && <button className="studio-toolbar-button studio-capture-toggle" type="button" aria-controls="studio-capture-options"
+          {hasOptions && !detached && <button className="studio-toolbar-button studio-capture-toggle" type="button" aria-controls="studio-capture-options"
             aria-expanded={expanded} onClick={() => onOpenChange(!expanded)}>
             <SlidersHorizontal size={14} aria-hidden="true" />{take ? 'Take review' : recording ? 'Live input' : retaking ? 'Retake setup' : 'Recording setup'}
             <ChevronDown className="studio-capture-chevron" size={13} aria-hidden="true" />

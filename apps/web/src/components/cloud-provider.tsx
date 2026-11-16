@@ -1,6 +1,8 @@
 'use client';
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
+import { panelPath } from '../lib/studio-layout';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { listSongs } from '../lib/song-store';
@@ -192,6 +194,11 @@ function useCloudState() {
 type CloudState = ReturnType<typeof useCloudState>;
 const CloudContext = createContext<CloudState | null>(null);
 export function CloudProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  if (pathname === panelPath) return children;
+  return <CloudSessionProvider>{children}</CloudSessionProvider>;
+}
+function CloudSessionProvider({ children }: { children: ReactNode }) {
   const value = useCloudState();
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>;
 }
