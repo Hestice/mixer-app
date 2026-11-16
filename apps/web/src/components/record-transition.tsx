@@ -19,7 +19,6 @@ function sleeveFor(songId: string) { return document.querySelector<HTMLElement>(
 function studioDisc(songId: string) { return discIn(document.querySelector(`[data-studio-record="${CSS.escape(songId)}"]`)); }
 function usable(rect?: DOMRect): rect is DOMRect { return !!rect && rect.width > 0 && rect.height > 0; }
 function translate(x: number, y: number) { return `translate(${x}px, ${y}px)`; }
-function scrollTo(top: number) { window.scrollTo({ top, behavior: 'instant' }); }
 function growInPlace(from: DOMRect, size: number) {
   const inset = (size - from.width) / 2;
   return `${translate(from.left - inset, from.top - inset)} scale(${size / from.width})`;
@@ -49,7 +48,6 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
   const flightKey = useRef(0);
   const overlay = useRef<HTMLDivElement>(null);
   const animations = useRef<Animation[]>([]);
-  const resetStudio = useRef<() => void>(undefined);
   const stagedDesk = useRef<HTMLElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const landing = useRef(false);
@@ -64,8 +62,10 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
     if (overlay.current) overlay.current.style.visibility = 'hidden';
     for (const animation of animations.current) animation.cancel();
     animations.current = [];
-    resetStudio.current?.();
-    resetStudio.current = undefined;
+    if (stagedDesk.current) {
+      stagedDesk.current.inert = false;
+      stagedDesk.current.dataset.recordDocking = 'seated';
+    }
     setFlight(null);
   }, []);
 
@@ -172,56 +172,28 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
     return () => { window.removeEventListener('popstate', onBack); clearTimeout(timer.current); };
   }, [finish, startReturn]);
 
-  const landInStudio = useCallback(async (move: Flight, node: HTMLElement, destination: HTMLElement, shell: HTMLElement) => {
-    scrollTo(0);
+  const landInStudio = useCallback(async (move: Flight, node: HTMLElement, destination: HTMLElement, desk: HTMLElement) => {
     const bounds = destination.getBoundingClientRect();
     if (!usable(bounds)) { finish(); return; }
 
-    const centerX = move.from.left + move.from.width / 2;
-    const centerY = move.from.top + move.from.height / 2;
+    const x = move.from.left + move.from.width / 2 - bounds.left - bounds.width / 2;
+    const y = move.from.top + move.from.height / 2 - bounds.top - bounds.height / 2;
+    const docked = translate(x, y);
     node.style.transform = growInPlace(move.from, bounds.width);
 
-    // Extra space above the desk lets it dock at the record's height and then scroll into place.
-    const dy = centerY - bounds.top - bounds.height / 2;
-    const padding = Math.max(0, Math.round(dy));
-    const previousPadding = shell.style.paddingTop;
-    const wasInert = shell.inert;
-    let frame = 0;
-    stagedDesk.current = shell;
-    resetStudio.current = () => {
-      cancelAnimationFrame(frame);
-      shell.style.paddingTop = previousPadding;
-      shell.inert = wasInert;
-      shell.dataset.recordDocking = 'seated';
-      if (location.pathname === '/studio') scrollTo(0);
-    };
-
-    shell.style.paddingTop = `${padding}px`;
-    scrollTo(Math.max(0, Math.round(-dy)));
-    const startScroll = window.scrollY;
-    const aligned = destination.getBoundingClientRect();
-    const x = centerX - aligned.left - aligned.width / 2;
-    const y = centerY - aligned.top - aligned.height / 2;
-    const docked = translate(x, y);
-    shell.inert = true;
-    shell.dataset.recordDocking = 'true';
-    await animate(shell, [
+    stagedDesk.current = desk;
+    desk.inert = true;
+    desk.dataset.recordDocking = 'true';
+    await animate(desk, [
       { transform: translate(x + 84, y), opacity: 0 },
       { transform: docked, opacity: 1 },
     ], DOCK_MS).finished;
     if (flightRef.current !== move) return;
 
     // The platter and the floating disc now share the same bounds.
-    shell.dataset.recordDocking = 'seated';
+    desk.dataset.recordDocking = 'seated';
     node.style.visibility = 'hidden';
-    const settle = animate(shell, [{ transform: docked }, { transform: translate(0, 0) }], SETTLE_MS);
-    const scrollWithDesk = () => {
-      const progress = settle.effect?.getComputedTiming().progress ?? 0;
-      scrollTo(startScroll + (padding - startScroll) * progress);
-      if (settle.playState !== 'finished') frame = requestAnimationFrame(scrollWithDesk);
-    };
-    frame = requestAnimationFrame(scrollWithDesk);
-    await settle.finished;
+    await animate(desk, [{ transform: docked }, { transform: translate(0, 0) }], SETTLE_MS).finished;
     if (flightRef.current === move) finish();
   }, [animate, finish]);
 
@@ -233,9 +205,9 @@ export function RecordTransitionProvider({ children }: { children: ReactNode }) 
 
     if (direction === 'studio') {
       const destination = studioDisc(move.songId);
-      const shell = destination?.closest<HTMLElement>('.studio-app');
-      if (!destination || !shell) { finish(); return; }
-      void landInStudio(move, node, destination, shell).catch(() => { if (flightRef.current === move) finish(); });
+      const desk = destination?.closest<HTMLElement>('.studio-desk');
+      if (!destination || !desk) { finish(); return; }
+      void landInStudio(move, node, destination, desk).catch(() => { if (flightRef.current === move) finish(); });
       return;
     }
 

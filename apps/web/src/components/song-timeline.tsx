@@ -16,7 +16,7 @@ export function SongTimeline({ studio, span }: { studio: Studio; span: number })
   return <section className="song-timeline" aria-label="Song timeline">
     <div className="timeline-toolbar"><label>Song position <output>{preciseTime(studio.position)}</output></label><div><button disabled={studio.locked || studio.busy} onClick={() => void studio.seekSong(0)}>To start</button><label>Zoom<select aria-label="Timeline zoom" value={zoom} onChange={event => setZoom(Number(event.target.value))}>{[1,2,4,8].map(value => <option key={value} value={value}>{value}×</option>)}</select></label></div></div>
     <p className="timeline-help">Click or drag the ruler to listen from there. Drag a waveform to move it; drag its edges to trim.</p>
-    <div className="timeline-scroll"><div className="timeline-canvas" style={{ minWidth: `${zoom * 100}%` }}>
+    <div className="timeline-scroll" role="region" aria-label="Waveform tracks" tabIndex={0}><div className="timeline-canvas" style={{ width: `${zoom * 100}%` }}>
       <div className="timeline-row timeline-ruler-row"><span className="timeline-label">SONG TIME</span><div className="timeline-ruler">
         <div className="timeline-ticks" aria-hidden="true">{Array.from({length:9},(_,i)=><span key={i}>{preciseTime(span*i/8)}</span>)}</div>
         <input aria-label="Song position" aria-valuetext={preciseTime(studio.position)} type="range" min="0" max={span} step=".01" value={Math.min(span,studio.position)} disabled={studio.locked || studio.busy} onChange={event=>void studio.seekSong(Number(event.target.value))} />
