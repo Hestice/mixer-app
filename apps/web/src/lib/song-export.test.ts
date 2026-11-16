@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { exportSong, EXPORT_SAMPLE_RATE, songFilename } from './song-export';
-import type { Layer } from './session';
+import { demoLayers, type Layer } from './session';
 
 class Node {
   targets: Node[] = [];
@@ -67,6 +67,15 @@ test('demo audio can be mixed alongside recordings and reports network failure',
   globalThis.fetch = async () => new Response('', { status: 503 });
   await assert.rejects(exportSong([recording({ recorded: false })], 1), /demo layer could not load/);
 });
+test('export keeps the guitar version used in each saved song', async () => {
+  const fetched: string[] = [];
+  globalThis.fetch = async url => { fetched.push(String(url)); return new Response(new Uint8Array([11])); };
+  const guitar = demoLayers[0];
+  await exportSong([guitar], .65);
+  await exportSong([{ ...guitar, demoStem: undefined }], .65);
+  assert.deepEqual(fetched, ['/audio/guitar-live.wav', '/audio/guitar.wav']);
+});
+
 test('download filenames preserve song names and remove path characters', () => {
   assert.equal(songFilename('  After hours · my version  '), 'After hours · my version.wav');
   assert.equal(songFilename('../My: song?'), '..-My- song-.wav');

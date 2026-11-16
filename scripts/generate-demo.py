@@ -1,7 +1,7 @@
-"""Generate original, deterministic demo stems. No downloaded audio or samples.
+"""Regenerate the synthesized After hours stems and waveform data.
 
 Four 4/4 bars at 84 BPM: Dmaj7, Bm7, Gmaj7, Aadd9.
-All stems have exactly the same loop length and sample rate.
+guitar-live.wav is the mastered recording. The synthesized guitar is retained for saved songs.
 """
 from pathlib import Path
 from array import array
@@ -16,6 +16,11 @@ LENGTH = int(round(16 * BEAT * RATE))
 ROOT = Path(__file__).resolve().parents[1] / 'apps/web/public/audio'
 ROOT.mkdir(parents=True, exist_ok=True)
 rng = random.Random(84)
+
+with wave.open(str(ROOT / 'guitar-live.wav'), 'rb') as guitar_file:
+    if (guitar_file.getnchannels(), guitar_file.getsampwidth(), guitar_file.getframerate(), guitar_file.getnframes()) != (1, 2, RATE, LENGTH):
+        raise ValueError('The recorded guitar must be mono PCM16 at 22.05 kHz and match the After hours loop length.')
+    guitar_pcm = array('h', guitar_file.readframes(LENGTH))
 
 def hz(midi):
     return 440 * 2 ** ((midi - 69) / 12)
@@ -66,6 +71,7 @@ for name, data in stems.items():
     print(f'{name}: {LENGTH} samples, {LENGTH / RATE:.4f}s')
 
 peaks = {}
+stems['guitar-live'] = [sample / 32768 for sample in guitar_pcm]
 for name, data in stems.items():
     values = []
     for bucket in range(64):

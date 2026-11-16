@@ -3,7 +3,7 @@ import { estimateBeatAlignment } from './beat-alignment';
 import { createSongOutput } from './audio-output';
 import { clipBounds, playbackWindow } from './clip-edits';
 import { ScratchPlayback } from './scratch-playback';
-import { extractPeaks, type Layer } from './session';
+import { demoLayers, extractPeaks, layerAudioId, type Layer } from './session';
 
 /** The tour loops; the recording workspace plays each part once on a shared clock. */
 export class AudioEngine {
@@ -11,7 +11,7 @@ export class AudioEngine {
   private master: GainNode | null = null;
   private buffers = new Map<string, AudioBuffer>();
   private sources = new Map<string, { source: AudioBufferSourceNode; gain: GainNode }>();
-  private loading: Promise<void> | null = null;
+  private loading = new Map<string, Promise<void>>();
   private scrub: ScratchPlayback | null = null;
   private startedAt = 0;
   private pausedAt = 0;
@@ -28,17 +28,25 @@ export class AudioEngine {
     return this.context;
   }
 
-  async loadDemo() {
-    await this.ready();
-    if (!this.loading) {
-      this.loading = Promise.all(['guitar', 'keys', 'rhythm', 'harmony'].map(async (id) => {
-        const response = await fetch(`/audio/${id}.wav`);
-        if (!response.ok) throw new Error('The demo could not load. Please try again.');
-        const buffer = await this.context!.decodeAudioData(await response.arrayBuffer());
-        this.buffers.set(id, buffer);
-      })).then(() => undefined).catch((error: unknown) => { this.loading = null; throw error; });
-    }
-    await this.loading;
+  async loadDemo(layers = demoLayers) {
+    const context = await this.ready();
+    const guitar = layers.find(layer => layer.id === 'guitar' && !layer.recorded);
+    const ids = [...(guitar ? [layerAudioId(guitar)] : []), 'keys', 'rhythm', 'harmony'];
+    await Promise.all(ids.map(id => {
+      let loading = this.loading.get(id);
+      if (!loading) {
+        loading = fetch(`/audio/${id}.wav`).then(async response => {
+          if (!response.ok) throw new Error('The demo could not load. Please try again.');
+          const buffer = await context.decodeAudioData(await response.arrayBuffer());
+          this.buffers.set(id, buffer);
+        }).catch(error => {
+          this.loading.delete(id);
+          throw error;
+        });
+        this.loading.set(id, loading);
+      }
+      return loading;
+    }));
   }
 
   async addRecording(id: string, blob: Blob | undefined, name = id) {
@@ -62,7 +70,7 @@ export class AudioEngine {
   configureSession(layers: Layer[], position = 0) {
     this.reset();
     this.looping = false;
-    this.loopDuration = Math.max(0, ...layers.map((layer) => clipBounds({ ...layer, duration: layer.duration ?? this.buffers.get(layer.id)?.duration }).end));
+    this.loopDuration = Math.max(0, ...layers.map((layer) => clipBounds({ ...layer, duration: layer.duration ?? this.buffers.get(layerAudioId(layer))?.duration }).end));
     this.pausedAt = Math.max(0, position);
   }
 
@@ -78,7 +86,7 @@ export class AudioEngine {
   }
 
   measureBeat(layer: Layer) {
-    const buffer = this.buffers.get(layer.id);
+    const buffer = this.buffers.get(layerAudioId(layer));
     return buffer ? estimateBeatAlignment(buffer, clipBounds({ ...layer, duration: buffer.duration })) : null;
   }
   peaks(id: string) {
@@ -154,7 +162,7 @@ export class AudioEngine {
   }
 
   private attach(layer: Layer, when: number, offset: number) {
-    const buffer = this.buffers.get(layer.id);
+    const buffer = this.buffers.get(layerAudioId(layer));
     if (!buffer || !this.context || !this.master) return;
     const window = playbackWindow({ ...layer, duration: buffer.duration }, offset);
     if (!this.looping && !window) return;

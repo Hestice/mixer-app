@@ -1,7 +1,7 @@
 import { readRecording } from './recording-storage';
 import { createSongOutput, OUTPUT_DELAY } from './audio-output';
 import { clipBounds, selectTake } from './clip-edits';
-import type { Layer } from './session';
+import { layerAudioId, type Layer } from './session';
 import { encodeWavChannels } from './wav';
 
 export const EXPORT_SAMPLE_RATE = 48_000;
@@ -34,7 +34,7 @@ export async function exportSong(layers: Layer[], volume: number, onStage?: (sta
       bytes = await readRecording(layer.blob, layer.name);
     } else {
       if (!DEMO_IDS.has(layer.id)) throw new Error(`The audio for “${layer.name}” is unavailable.`);
-      const response = await fetch(`/audio/${layer.id}.wav`);
+      const response = await fetch(`/audio/${layerAudioId(layer)}.wav`);
       if (!response.ok) throw new Error('A demo layer could not load. Check your connection and try again.');
       bytes = await response.arrayBuffer();
     }
