@@ -1,68 +1,67 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { Pencil, Trash2 } from 'lucide-react';
 import type { LibraryAction } from '../lib/library-entry';
 
-export function LibraryDialog({ kind, title, archived, onAction, onClose }: {
+export function LibraryDialog({ kind, title, action, onAction, onClose, restoreFocus }: {
   kind: 'song' | 'layer';
   title: string;
-  archived: boolean;
+  action: 'rename' | 'delete';
   onAction: (action: LibraryAction) => Promise<void> | void;
   onClose: () => void;
+  restoreFocus: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const cancelDelete = useRef<HTMLButtonElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
   const [name, setName] = useState(title);
-  const [confirm, setConfirm] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => {
-    const node = dialog.current;
-    node?.showModal();
-    return () => { if (node?.open) node.close(); };
-  }, []);
-  useLayoutEffect(() => {
-    if (confirm) cancelDelete.current?.focus();
-  }, [confirm]);
+  const deleting = action === 'delete';
+  const validName = !!name.trim() && name.trim() !== title;
+  const Icon = deleting ? Trash2 : Pencil;
 
-  async function apply(action: LibraryAction) {
-    if (pending) return;
+  async function apply() {
+    if (pending || (!deleting && !validName)) return;
     setPending(true);
     setError('');
-    try { await onAction(action); onClose(); }
-    catch (reason) {
+    try {
+      await onAction(deleting ? { type: 'delete' } : { type: 'rename', title: name });
+      onClose();
+    } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save the change. Try again.');
       setPending(false);
     }
   }
 
-  return <dialog ref={dialog} className="library-dialog" aria-labelledby="library-dialog-title" onCancel={event => {
-    event.preventDefault();
-    if (!pending) onClose();
-  }}>
-    <div className="library-dialog-body">
-      <h2 id="library-dialog-title">{confirm ? `Delete ${kind}?` : `Manage ${kind}`}</h2>
-      {confirm ? <>
-        <p><strong>{title}</strong> will disappear from the archive. The app retains the recordings.</p>
-        <div className="library-dialog-actions">
-          <button ref={cancelDelete} className="button button-secondary" disabled={pending} onClick={() => setConfirm(false)}>Cancel</button>
-          <button className="button library-delete" disabled={pending} onClick={() => void apply({ type: 'delete' })}>Delete {kind}</button>
-        </div>
-      </> : <>
-        <form onSubmit={event => { event.preventDefault(); void apply({ type: 'rename', title: name }); }}>
-          <label htmlFor="library-name">{kind === 'song' ? 'Song name' : 'Layer name'}</label>
-          <div className="library-name-edit">
-            <input id="library-name" autoFocus value={name} maxLength={70} required disabled={pending} onChange={event => setName(event.target.value)} />
-            <button className="button button-primary" disabled={pending || !name.trim() || name.trim() === title}>Rename</button>
+  return <Dialog.Root open onOpenChange={open => { if (!open && !pending) onClose(); }}>
+    <Dialog.Portal>
+      <Dialog.Overlay className="library-dialog-overlay" />
+      <Dialog.Content className="library-dialog" {...(!deleting && { 'aria-describedby': undefined })}
+        onOpenAutoFocus={event => {
+          event.preventDefault();
+          if (deleting) cancel.current?.focus();
+          else { nameInput.current?.focus(); nameInput.current?.select(); }
+        }}
+        onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}>
+        <form onSubmit={event => { event.preventDefault(); void apply(); }}>
+          <div className="library-dialog-title">
+            <span data-destructive={deleting || undefined}><Icon size={16} aria-hidden="true" /></span>
+            <Dialog.Title>{deleting ? `Delete ${kind}?` : `Rename ${kind}`}</Dialog.Title>
+          </div>
+          {deleting
+            ? <Dialog.Description><strong>{title}</strong> will be removed from the archive. Its recordings will stay stored.</Dialog.Description>
+            : <label className="library-name-edit"><span>{kind === 'song' ? 'Song name' : 'Layer name'}</span><input ref={nameInput} value={name} maxLength={70} required disabled={pending} onChange={event => setName(event.target.value)} /></label>}
+          {error && <p className="cloud-error" role="alert">{error}</p>}
+          <div className="library-dialog-actions">
+            <Dialog.Close asChild><button ref={cancel} className="library-dialog-button" type="button" disabled={pending}>Cancel</button></Dialog.Close>
+            <button className="library-dialog-button" data-variant={deleting ? 'destructive' : 'primary'} disabled={pending || (!deleting && !validName)}>
+              {pending ? 'Saving…' : deleting ? `Delete ${kind}` : 'Save name'}
+            </button>
           </div>
         </form>
-        <div className="library-dialog-actions">
-          <button className="text-button" disabled={pending} onClick={onClose}>Cancel</button>
-          {archived && <button className="text-button library-delete-link" disabled={pending} onClick={() => setConfirm(true)}>Delete…</button>}
-          <button className="button button-secondary" disabled={pending} onClick={() => void apply({ type: archived ? 'restore' : 'archive' })}>{archived ? 'Restore' : 'Archive'}</button>
-        </div>
-      </>}
-      {error && <p className="cloud-error" role="alert">{error}</p>}
-    </div>
-  </dialog>;
+      </Dialog.Content>
+    </Dialog.Portal>
+  </Dialog.Root>;
 }
