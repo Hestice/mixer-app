@@ -19,6 +19,7 @@ export interface Layer extends ClipEdits, Lifecycle {
   id: string;
   name: string;
   kind: LayerKind;
+  demoStem?: 'guitar-live';
   color?: LayerColor;
   enabled: boolean;
   volume: number;
@@ -31,10 +32,15 @@ export interface Layer extends ClipEdits, Lifecycle {
 }
 
 export const demoLayers: Layer[] = [
-  { id: 'guitar', name: 'Guitar', kind: 'guitar', enabled: true, volume: 0.8, peaks: demoPeaks.guitar },
+  { id: 'guitar', name: 'Guitar', kind: 'guitar', demoStem: 'guitar-live', enabled: true, volume: 0.8, peaks: demoPeaks['guitar-live'] },
   { id: 'keys', name: 'Keys', kind: 'keys', enabled: false, volume: 0.7, peaks: demoPeaks.keys },
   { id: 'rhythm', name: 'Rhythm', kind: 'rhythm', enabled: false, volume: 0.7, peaks: demoPeaks.rhythm },
 ];
+
+/** Saved demo layers without a stem version still use the original synthesized guitar. */
+export function layerAudioId(layer: Layer) {
+  return !layer.recorded && layer.id === 'guitar' && layer.demoStem === 'guitar-live' ? layer.demoStem : layer.id;
+}
 
 export const harmonyLayer: Layer = {
   id: 'harmony', name: 'Harmony', kind: 'harmony', enabled: true, volume: 0.65, peaks: demoPeaks.harmony,

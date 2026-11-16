@@ -1,5 +1,5 @@
 import { clipBounds } from './clip-edits';
-import type { Layer } from './session';
+import { layerAudioId, type Layer } from './session';
 
 export const SCRATCH_HOP_SECONDS = .03;
 
@@ -14,7 +14,7 @@ export function scratchBuffer(context: AudioContext, buffers: ReadonlyMap<string
 
   for (const layer of layers) {
     if (!layer.enabled || layer.volume <= 0) continue;
-    const buffer = buffers.get(layer.id);
+    const buffer = buffers.get(layerAudioId(layer));
     if (!buffer) continue;
     const clip = clipBounds({ ...layer, duration: buffer.duration });
     if (Math.max(position, lastPosition) <= clip.startAt || Math.min(position, lastPosition) >= clip.end) continue;

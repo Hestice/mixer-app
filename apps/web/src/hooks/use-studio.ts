@@ -206,8 +206,8 @@ export function useStudio(startInWorkspace = false) {
   async function prepareAudio(includeCandidate = previewCandidate, only?: Layer) {
     const run = runRef.current;
     const engine = getEngine();
-    if (!workspace || withDemo && !only?.recorded) await engine.loadDemo();
     const prepared = only ? [only] : [...(candidate && includeCandidate ? backingLayers : layers), ...(candidate && includeCandidate ? [candidate] : [])];
+    if (!workspace || withDemo && !only?.recorded) await engine.loadDemo(prepared);
     for (const layer of prepared) {
       if (layer.recorded && decodedRecordings.current.get(layer.id) !== (layer.takeId ?? layer.id)) {
         try { await engine.addRecording(layer.id, layer.blob, layer.name); }

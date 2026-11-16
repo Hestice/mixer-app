@@ -90,6 +90,29 @@ test('repeated play requests replace the active mix and pause stops every source
   engine.dispose();
 });
 
+test('new demo sessions play the recorded guitar while existing sessions keep the original stem', async () => {
+  const fetched: string[] = [];
+  globalThis.fetch = async url => { fetched.push(String(url)); return new Response(new Uint8Array([0])); };
+  const engine = new AudioEngine();
+  const guitar = demoLayers[0];
+  const original = { ...guitar, demoStem: undefined };
+  await engine.loadDemo();
+  engine.configureSession([guitar]);
+  await engine.play([guitar]);
+  const context = FakeContext.current;
+  const newBuffer = context.sources.at(-1)?.buffer;
+  assert.ok(newBuffer);
+
+  await engine.loadDemo([original]);
+  engine.configureSession([original]);
+  await engine.play([original]);
+  assert.ok(context.sources.at(-1)?.buffer);
+  assert.notEqual(context.sources.at(-1)?.buffer, newBuffer);
+  assert.deepEqual(fetched.filter(url => url.includes('guitar')), ['/audio/guitar-live.wav', '/audio/guitar.wav']);
+  assert.equal(fetched.length, 5, 'the two versions share the other decoded stems');
+  engine.dispose();
+});
+
 test('overdubbing schedules all backing layers at the microphone capture time', async () => {
   const engine = new AudioEngine();
   await engine.loadDemo();

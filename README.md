@@ -43,7 +43,7 @@ The recording console has a shared waveform timeline, per-layer volume and solo 
 
 - `apps/web`: Next.js App Router, React, Web Audio and microphone capture through an AudioWorklet.
 - `apps/api`: NestJS health endpoint and demo metadata.
-- `scripts/generate-demo.py`: reproducible synthesis of the four original demo parts and waveform data.
+- `scripts/generate-demo.py`: regenerates the synthesized After hours stems and waveform data from all demo audio.
 - `PRODUCT_RESEARCH.md` and `LANDING_EXPERIENCE.md`: product research and the earlier storyboard.
 
 The interface works without the Nest API. Audio saves in the browser first. Optional Supabase backup uploads only selected songs to private storage; Nest has no recording upload endpoint.
@@ -58,7 +58,7 @@ Saves serialize per session and commit audio, review state and the library summa
 
 Browser and device latency can affect overdub timing. Headphones reduce acoustic bleed; the app cannot guarantee isolation from speakers or leaking headphones. Browser QA used a synthetic microphone to verify record/review/keep, a longer second take, canceled retry recovery, and silence in the captured take while clicks and backing audio played. Real microphone recording still needs a device smoke test.
 
-The demo instruments are synthesized, including the harmony. They are not extracted stems or generated singing. Source separation, vocal harmonization, lessons and collaboration remain future product work.
+After hours uses a recorded guitar performance with synthesized keys, rhythm and harmony. Source separation, vocal harmonization, lessons and collaboration remain future product work.
 
 ## Hosting
 
