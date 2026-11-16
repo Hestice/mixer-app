@@ -8,6 +8,8 @@ import { Tonearm } from './tonearm';
 import { ClipEditor, TakePicker } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
 import { Waveform } from './waveform';
+import { RecordDisc } from './record-artwork';
+import { RecordCustomizer } from './record-customizer';
 import { SongTimeline, preciseTime } from './song-timeline';
 import '../app/studio.css';
 
@@ -32,6 +34,7 @@ function Track({ layer, studio, span }: { layer: Layer; studio: Studio; span: nu
 export function RecordingConsole({ studio }: { studio: Studio }) {
   const { title, setTitle } = studio;
   const [notice, setNotice] = useState('');
+  const [customizing,setCustomizing]=useState(false);
   const recordButton = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLInputElement>(null);
   const state = studio.recordingState;
@@ -66,6 +69,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   if (!studio.localReady) return <div className="studio-app"><main className="songs-page studio-loading"><span className="studio-eyebrow">LISTENING ROOM</span><h1>{studio.loadError ? 'Could not open this song' : 'Opening your song…'}</h1><p role={studio.loadError ? 'alert' : 'status'}>{studio.loadError || 'Bringing your layers back to the desk.'}</p>{studio.loadError && <div className="songs-actions"><button className="button button-primary" onClick={() => window.location.reload()}>Try again</button><a className="button button-secondary" href="/songs">My songs</a></div>}</main></div>;
 
   return <div className="studio-app">
+    {customizing && <RecordCustomizer title={title} artwork={studio.artwork} onClose={()=>setCustomizing(false)} onDone={art=>{studio.setArtwork(art);setCustomizing(false);setNotice('Record appearance saved.');}} />}
     <a className="skip-link" href="#studio-capture">Skip to recording controls</a>
     <header className="studio-header"><span className="wordmark"><span className="brand-icon" aria-hidden="true"><i /><i /><i /><i /></span>listening room.</span><button className="text-button studio-library-link" disabled={studio.locked || studio.busy} onClick={() => void studio.openMySongs()}>My songs <span aria-hidden="true">↗</span></button></header>
     <main className="studio-desk" aria-label="Recording console">
@@ -75,7 +79,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
       <div className="studio-body">
         <section className="studio-song" aria-labelledby="studio-song-title">
           <div className="studio-song-top">
-            <div className="studio-turntable"><div className="platter-surround"><button className={`platter ${studio.playing ? 'spinning' : ''}`} aria-label={studio.playing ? 'Pause song' : 'Play song'} disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}><span className="grooves" aria-hidden="true" /><span className="record-label label-sand"><span className="studio-record-caption">SIDE A</span>{studio.playing ? <Pause size={23} fill="currentColor" /> : <Play size={23} fill="currentColor" />}<span className="studio-record-caption">YOUR SONG</span></span></button><Tonearm playing={studio.playing} teach={false} /></div></div>
+            <div className="studio-turntable"><div className="platter-surround"><button className={`platter ${studio.playing ? 'spinning' : ''}`} aria-label={studio.playing ? 'Pause song' : 'Play song'} disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}><RecordDisc artwork={studio.artwork}><span className="studio-record-caption">SIDE A</span>{studio.playing ? <Pause size={23} fill="currentColor" /> : <Play size={23} fill="currentColor" />}<span className="studio-record-caption">YOUR SONG</span></RecordDisc></button><Tonearm playing={studio.playing} teach={false} /></div><button className="text-button studio-art-edit" disabled={studio.locked || studio.busy} onClick={()=>setCustomizing(true)}>Edit record</button></div>
             <div className="studio-song-summary"><span className="studio-eyebrow">ONE PART AT A TIME</span><h1 id="studio-song-title">Your song</h1><p>{studio.layers.length ? `${studio.layers.length} ${studio.layers.length === 1 ? 'layer' : 'layers'} · ${timeLabel(duration)}` : 'A little room for your next idea.'}</p><div className="studio-transport"><button className="button button-light" disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}>{studio.playing ? <Pause size={15} /> : <Play size={15} />}{studio.playing ? 'Pause' : 'Play song'}</button><time>{preciseTime(studio.position)}</time></div></div>
           </div>
           <div className="studio-layers-heading"><h2>Layers in your song</h2><span>Record freely · No looping</span></div>

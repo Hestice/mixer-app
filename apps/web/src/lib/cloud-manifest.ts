@@ -1,3 +1,4 @@
+import { validRecordArt } from './record-art';
 import type { Layer, RecordingTake } from './session';
 import type { SavedSong, SongContent } from './song-store';
 import { takesOf, selectTake } from './clip-edits';
@@ -48,7 +49,7 @@ export async function makeManifest(song: SavedSong, ownerId: string, upload: (pa
   for (const layer of song.layers) layers.push(await convert(layer));
   const candidate = song.candidate ? await convert(song.candidate) : null;
   return { version: 2, title: recovered ? `${song.title} · Recovered version` : song.title,
-    layers, candidate, retakeLayerId: song.retakeLayerId, withDemo: song.withDemo, volume: song.volume, partName: song.partName,
+    artwork: song.artwork, layers, candidate, retakeLayerId: song.retakeLayerId, withDemo: song.withDemo, volume: song.volume, partName: song.partName,
     tempo: song.tempo, countIn: song.countIn, metronomeMode: song.metronomeMode };
 }
 
@@ -58,6 +59,7 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
     || !Number.isFinite(manifest.volume) || typeof manifest.partName !== 'string'
     || typeof manifest.countIn !== 'boolean' || typeof manifest.withDemo !== 'boolean'
     || !['off', 'visual', 'sound'].includes(manifest.metronomeMode)) throw new Error('This song uses an unsupported format. Your local copy was not changed.');
+  if (manifest.artwork !== undefined && !validRecordArt(manifest.artwork)) throw new Error('The record artwork is invalid. Your local copy was not changed.');
   function validateEdits(take: { duration?: number; trimStart?: number; trimEnd?: number; startAt?: number }) {
     const duration = take.duration ?? 80 / 7;
     if (!Number.isFinite(duration) || duration <= 0 || (take.startAt !== undefined && (!Number.isFinite(take.startAt) || take.startAt < 0 || take.startAt > 3600))
@@ -106,7 +108,7 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
   }
   const layers: Layer[] = [];
   for (const layer of manifest.layers) layers.push(await restore(layer));
-  return { title: manifest.title, layers, candidate: manifest.candidate ? await restore(manifest.candidate) : null, retakeLayerId: manifest.retakeLayerId,
+  return { artwork: manifest.artwork, title: manifest.title, layers, candidate: manifest.candidate ? await restore(manifest.candidate) : null, retakeLayerId: manifest.retakeLayerId,
     withDemo: manifest.withDemo, volume: manifest.volume, partName: manifest.partName,
     tempo: manifest.tempo, countIn: manifest.countIn, metronomeMode: manifest.metronomeMode };
 }
