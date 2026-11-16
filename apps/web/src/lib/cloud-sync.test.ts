@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { saveSong, getSong, SongWriter, type SongContent } from './song-store';
-import { enableBackup, getBackup, removeDownloadedCopies } from './backup-store';
-import { syncSong, openCloudSong, CloudConflictError, SyncCanceledError, type CloudTransport } from './cloud-sync';
+import { saveSong, getSong, openLocalSong, SongWriter, updateSavedSong, type SongContent } from './song-store';
+import { cacheCloudLibrary, enableBackup, getBackup, removeDownloadedCopies } from './backup-store';
+import { syncSong, openCloudSong, updateCloudSong, CloudConflictError, SyncCanceledError, type CloudTransport } from './cloud-sync';
 import { makeManifest, downloadManifest, type CloudSong } from './cloud-manifest';
 import { appendTake, editClip, selectTake } from './clip-edits';
 import { encodeWav } from './wav';
@@ -197,4 +197,61 @@ test('legacy cloud recordings still restore and invalid alternate references can
   manifest.candidate!.takes![0].audio!.path = 'foreign/audio.wav'; let downloads = 0;
   await assert.rejects(downloadManifest(manifest, f.owner, async () => { downloads++; return new Blob(); }), /invalid/);
   assert.equal(downloads, 0);
+});
+
+test('an offline archive updates the original cloud row while preserving newer cloud audio and edits', async () => {
+  const f = await fixture(); await syncSong(f.id, f.owner, f.remote);
+  const cloud = f.songs.get(f.id)!;
+  const newer = { ...cloud, revision: cloud.revision + 1, commit_id: crypto.randomUUID(), content: { ...cloud.content, volume: .15 } };
+  f.songs.set(f.id, newer);
+  f.remote.upload = async () => { throw new Error('Metadata sync must not upload audio'); };
+  f.remote.download = async () => { throw new Error('Metadata sync must not download audio'); };
+  const archived = await updateSavedSong(f.id, f.song.revision, f.owner, { type: 'archive' });
+  await syncSong(f.id, f.owner, f.remote);
+  const published = f.songs.get(f.id)!;
+  assert.equal(f.songs.size, 1);
+  assert.equal(published.content.archivedAt, archived.archivedAt);
+  assert.equal(published.content.volume, .15);
+  assert.deepEqual(published.content.candidate, newer.content.candidate);
+  assert.equal((await getBackup(f.id))?.libraryEdit, undefined);
+  assert.equal((await getBackup(f.id))?.remoteRevision, cloud.revision, 'newer cloud content remains available on next open');
+});
+
+test('cloud-only restore and delete keep audio and mirror lifecycle onto a cached device', async () => {
+  const f = await fixture(); await syncSong(f.id, f.owner, f.remote);
+  const original = f.songs.get(f.id)!;
+  const archived = await updateCloudSong(f.id, original.revision, f.owner, { type: 'archive' }, f.remote);
+  await cacheCloudLibrary(f.owner, [archived]);
+  assert.equal((await openLocalSong(f.id, f.owner)).unavailable, 'archived');
+  const restored = await updateCloudSong(f.id, archived.revision, f.owner, { type: 'restore' }, f.remote);
+  await cacheCloudLibrary(f.owner, [restored]);
+  await cacheCloudLibrary(f.owner, [archived]);
+  assert.ok((await openLocalSong(f.id, f.owner)).song);
+  const archivedAgain = await updateCloudSong(f.id, restored.revision, f.owner, { type: 'archive' }, f.remote);
+  const deleted = await updateCloudSong(f.id, archivedAgain.revision, f.owner, { type: 'delete' }, f.remote);
+  await cacheCloudLibrary(f.owner, [deleted]);
+  await cacheCloudLibrary(f.owner, [restored]);
+  assert.ok(deleted.content.deletedAt);
+  assert.equal((await openLocalSong(f.id, f.owner)).unavailable, 'deleted');
+  await assert.rejects(openCloudSong(f.id, f.owner, f.remote), /deleted/);
+  assert.equal(f.songs.size, 1);
+  assert.deepEqual(deleted.content.candidate, original.content.candidate);
+  assert.equal(f.audio.size, 1);
+});
+
+test('archived and deleted layers round-trip through a cloud manifest with their takes and timing', async () => {
+  const f = await fixture(), now = Date.now();
+  const first = editClip(f.song.candidate!, { trimStart: .1, startAt: 3 });
+  const alternate = appendTake(first, { id: 'replacement', duration: 2, blob: encodeWav(new Float32Array([.3, .4]), 44100) });
+  await saveSong(f.id, 1, { ...f.song, layers: [
+    { ...alternate, archivedAt: now },
+    { ...first, id: 'deleted', archivedAt: now, deletedAt: now },
+  ], candidate: null });
+  await syncSong(f.id, f.owner, f.remote);
+  const restored = await downloadManifest(f.songs.get(f.id)!.content, f.owner, f.remote.download);
+  assert.equal(restored.layers[0].archivedAt, now);
+  assert.equal(restored.layers[0].takes?.length, 2);
+  assert.equal(selectTake(restored.layers[0], first.id).startAt, 3);
+  assert.equal(restored.layers[1].deletedAt, now);
+  assert.deepEqual(await restored.layers[1].blob!.arrayBuffer(), await first.blob!.arrayBuffer());
 });

@@ -4,10 +4,11 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { listSongs } from '../lib/song-store';
-import { getBackup, enableBackup, listBackups, getBackupPreference, setBackupPreference, removeDownloadedCopies, type BackupLink } from '../lib/backup-store';
-import { syncSong, openCloudSong, SyncCanceledError } from '../lib/cloud-sync';
+import { cacheCloudLibrary, getBackup, enableBackup, listBackups, getBackupPreference, setBackupPreference, removeDownloadedCopies, type BackupLink } from '../lib/backup-store';
+import { syncSong, openCloudSong, updateCloudSong, SyncCanceledError } from '../lib/cloud-sync';
 import { cloudMessage, supabaseTransport } from '../lib/supabase-transport';
 import { recoverLayerAudio, type CloudSong } from '../lib/cloud-manifest';
+import type { LibraryAction } from '../lib/library-entry';
 import type { Layer } from '../lib/session';
 
 function useCloudState() {
@@ -84,7 +85,17 @@ function useCloudState() {
         }
         if (active()) {
           const songs = await transport.list();
-          if (active()) { setRemoteSongs(songs); setError(''); }
+          if (active()) {
+            setRemoteSongs(current => {
+              const known = new Map(current.map(song => [song.id, song]));
+              return songs.map(song => {
+                const previous = known.get(song.id);
+                return previous && previous.revision > song.revision ? previous : song;
+              });
+            });
+            setError('');
+            await cacheCloudLibrary(ownerId, songs);
+          }
         }
       };
       try {
@@ -133,6 +144,16 @@ function useCloudState() {
     if (!active()) throw new Error('Your account changed. Please open the song again.');
     return localId;
   }
+  async function manageRemote(id: string, revision: number, action: LibraryAction) {
+    const ownerId = sessionRef.current?.user.id, generation = epoch.current;
+    if (!client || !ownerId) throw new Error('Sign in to manage your cloud songs.');
+    const active = () => sessionRef.current?.user.id === ownerId && epoch.current === generation && !paused.current;
+    const song = await updateCloudSong(id, revision, ownerId, action, supabaseTransport(client, ownerId, active));
+    if (!active()) throw new SyncCanceledError();
+    setRemoteSongs(current => current.map(item => item.id === id && item.revision <= song.revision ? song : item));
+    trigger.current();
+    await cacheCloudLibrary(ownerId, [song]).catch(() => {});
+  }
   async function recoverRecordings(id: string, layer: Layer) {
     const ownerId = sessionRef.current?.user.id, generation = epoch.current;
     if (!client || !ownerId) return new Map<string, Blob>();
@@ -159,13 +180,13 @@ function useCloudState() {
   function status(id: string, revision: number) {
     const link = links.find((item) => item.id === id && item.ownerId === session?.user.id);
     if (!link) return '';
-    if (link.syncedLocalRevision >= revision && !link.attempt) return link.recovered ? 'Backed up · recovered version' : 'Backed up';
+    if (link.syncedLocalRevision >= revision && !link.attempt && !link.libraryEdit) return link.recovered ? 'Backed up · recovered version' : 'Backed up';
     if (!online) return 'Saved locally · offline';
     if (errors[id]) return 'Backup needs attention';
     return uploading === id ? 'Backing up…' : 'Waiting to back up';
   }
   return { client, configured: !!client, user: session?.user ?? null, ready, links, remoteSongs, autoBackup, online,
-    error, errors, version, status, selectSongs, setAutomatic, openRemote, recoverRecordings, signOut, retry: () => trigger.current() };
+    error, errors, version, status, selectSongs, setAutomatic, openRemote, manageRemote, recoverRecordings, signOut, retry: () => trigger.current() };
 }
 
 type CloudState = ReturnType<typeof useCloudState>;

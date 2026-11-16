@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lifecycle, lifecycleEdit, type LifecycleAction } from '../lib/library-entry';
 import { appendTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
 import type { ClipEdits } from '../lib/session';
 import { RecordingReadError, readRecording, recordingBlob, recordingCopies, replaceLayerAudio } from '../lib/recording-storage';
@@ -29,12 +30,16 @@ export function useStudio(startInWorkspace = false) {
   const engineRef = useRef<AudioEngine | null>(null);
   const getEngine = () => engineRef.current ?? (engineRef.current = new AudioEngine());
   const tourChapterRef = useRef(0);
-  const [layers, setLayers] = useState<Layer[]>(startInWorkspace ? [] : demoLayers);
+  const [savedLayers, setLayers] = useState<Layer[]>(startInWorkspace ? [] : demoLayers);
+  const layers = useMemo(() => savedLayers.filter(layer => lifecycle(layer) === 'active'), [savedLayers]);
+  const archivedLayers = useMemo(() => savedLayers.filter(layer => lifecycle(layer) === 'archived'), [savedLayers]);
   const [candidate, setCandidate] = useState<Layer | null>(null);
   const [retakeLayerId, setRetakeLayerId] = useState<string | undefined>();
   const editHistory = useRef<{ layers: Layer[]; candidate: Layer | null; retakeLayerId?: string }[]>([]);
   const [undoCount, setUndoCount] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [stopVersion, setStopVersion] = useState(0);
+  const playbackRequest = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [exportStatus, setExportStatus] = useState('');
@@ -92,8 +97,8 @@ export function useStudio(startInWorkspace = false) {
   const mixRef = useRef(mix);
   mixRef.current = mix;
 
-  const content = useMemo<SongContent>(() => ({ title, artwork, layers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode }),
-    [title, artwork, layers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode]);
+  const content = useMemo<SongContent>(() => ({ title, artwork, layers: savedLayers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode }),
+    [title, artwork, savedLayers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode]);
   const contentRef = useRef(content);
   contentRef.current = content;
   const saveState = !localReady ? 'loading' : saveError ? 'error' : savedContent === content ? 'saved' : 'saving';
@@ -120,9 +125,10 @@ export function useStudio(startInWorkspace = false) {
         setLocalReady(true);
       })();
     } else {
-      void openLocalSong(id, cloud.user?.id).then(({ song, audioError, protectionError, ownerMismatch }) => {
+      void openLocalSong(id, cloud.user?.id).then(({ song, audioError, protectionError, ownerMismatch, unavailable }) => {
         if (canceled) return;
         if (ownerMismatch) { setLoadError('Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.'); return; }
+        if (unavailable) { setLoadError(unavailable === 'archived' ? 'Restore this song from the archive to open it.' : 'This song has been deleted.'); return; }
         if (!song) { setLoadError('This song is not on this browser. It may have been saved on another device, or its browser data was cleared.'); return; }
         setAudioError(audioError?.message ?? '');
         if (protectionError) setSaveError(storageMessage(protectionError));
@@ -134,7 +140,7 @@ export function useStudio(startInWorkspace = false) {
         // Headphones must be confirmed again before any audible click.
         setMetronomeMode(song.metronomeMode === 'sound' ? 'visual' : song.metronomeMode);
         setRecordingState(song.candidate ? 'review' : 'idle'); setPreviewCandidate(false);
-        getEngine().configureSession(song.layers);
+        getEngine().configureSession(song.layers.filter(layer => lifecycle(layer) === 'active'));
         restoredContent.current = true;
         setLocalReady(true);
       }).catch(() => { if (!canceled) setLoadError('Your songs could not be opened. Check that browser storage is available, then reload to try again.'); });
@@ -266,19 +272,43 @@ export function useStudio(startInWorkspace = false) {
 
   const report = (reason: unknown) => setError(reason instanceof Error ? reason.message : 'Something went wrong. Please try again.');
 
-  async function togglePlayback() {
+  const readSongPosition = useCallback(() => engineRef.current?.position ?? 0, []);
+
+  function pausePlayback() {
+    const engine = getEngine();
+    engine.pause();
+    setPlaying(false);
+    setPosition(engine.position);
+    return engine.position;
+  }
+
+  function stopPlayback() {
+    if (locked) return;
+    playbackRequest.current++;
+    getEngine().reset();
+    setPlaying(false);
+    setPosition(0);
+    setStopVersion(version => version + 1);
+  }
+
+  async function togglePlayback(cue?: () => Promise<void>) {
     if (locked || busy) return;
     setError('');
     const engine = getEngine();
-    if (playing) { engine.pause(); setPlaying(false); return; }
+    if (engine.playing) { pausePlayback(); return; }
+    if (workspace && !layers.length && !candidate) return;
+    const request = ++playbackRequest.current;
     setBusy(true);
     try {
-      await prepareAudio(previewCandidate);
-      if (workspace && !layers.length && !candidate) return;
+      await Promise.all([prepareAudio(previewCandidate), cue?.()]);
+      if (request !== playbackRequest.current || disposed.current) return;
       await engine.play(mixRef.current);
+      if (request !== playbackRequest.current) { engine.reset(); return; }
       engine.volume(volume);
       setPlaying(true);
-    } catch (reason) { report(reason); }
+    } catch (reason) {
+      if (request === playbackRequest.current) report(reason);
+    }
     finally { setBusy(false); }
   }
 
@@ -293,7 +323,7 @@ export function useStudio(startInWorkspace = false) {
 
   async function toggleLayer(id: string) {
     if (locked || busy) return;
-    const next = layers.map((layer) => layer.id === id ? { ...layer, enabled: !layer.enabled } : layer);
+    const next = savedLayers.map((layer) => layer.id === id ? { ...layer, enabled: !layer.enabled } : layer);
     setSoloId(null); setLayers(next);
     // An explicit enable action should be audible even if the song was paused.
     if (!workspace && !playing && next.find((layer) => layer.id === id)?.enabled) {
@@ -344,7 +374,7 @@ export function useStudio(startInWorkspace = false) {
 
   function beginEdit() {
     if (locked || busy) return;
-    editHistory.current = [...editHistory.current.slice(-29), { layers, candidate, retakeLayerId }];
+    editHistory.current = [...editHistory.current.slice(-29), { layers: savedLayers, candidate, retakeLayerId }];
     setUndoCount(editHistory.current.length);
     getEngine().pause(); setPlaying(false);
   }
@@ -374,14 +404,44 @@ export function useStudio(startInWorkspace = false) {
     decodedRecordings.current.clear(); setUndoCount(editHistory.current.length);
   }
 
+  function renameLayer(id: string, name: string) {
+    if (locked || busy || retakeLayerId === id) return;
+    const title = name.trim().slice(0, 70);
+    if (!title) return;
+    beginEdit();
+    setLayers(current => current.map(layer => layer.id === id ? { ...layer, name: title } : layer));
+  }
+
+  function manageLayer(id: string, action: LifecycleAction) {
+    if (locked || busy || retakeLayerId === id) return;
+    const layer = savedLayers.find(item => item.id === id);
+    if (!layer) return;
+    try {
+      const patch = lifecycleEdit(layer, action);
+      const next = savedLayers.map(item => item.id === id ? { ...item, ...patch } : item);
+      setLayers(next);
+      // A trim or take undo must not resurrect an archived/deleted layer.
+      editHistory.current = editHistory.current
+        .filter(edit => edit.layers.some(item => item.id === id) && edit.candidate?.id !== id && edit.retakeLayerId !== id)
+        .map(edit => ({ ...edit, layers: edit.layers.map(item => item.id === id ? { ...item, ...patch } : item) }));
+      setUndoCount(editHistory.current.length);
+      setSoloId(null);
+      getEngine().configureSession(next.filter(item => lifecycle(item) === 'active'), getEngine().position);
+      setPlaying(false);
+    } catch (reason) { report(reason); }
+  }
+
   function keepCandidate() {
     if (!candidate || locked || busy) return;
     if (workspace) beginEdit();
-    const next = retakeLayerId ? layers.map((layer) => layer.id === retakeLayerId ? { ...candidate, id: layer.id, enabled: layer.enabled, volume: layer.volume } : layer) : commitLayer(layers, candidate);
-    if (workspace) { getEngine().configureSession(next, getEngine().position); setPlaying(false); }
+    const next = retakeLayerId ? savedLayers.map((layer) => layer.id === retakeLayerId ? { ...candidate, id: layer.id, enabled: layer.enabled, volume: layer.volume } : layer) : commitLayer(savedLayers, candidate);
+    if (workspace) { getEngine().configureSession(next.filter(layer => lifecycle(layer) === 'active'), getEngine().position); setPlaying(false); }
     setLayers(next); setCandidate(null); setRetakeLayerId(undefined); setSoloId(null); setPreviewCandidate(false);
     setRecordingState('idle');
-    if (workspace) setPartName(next.length === 1 ? 'Vocals' : `Layer ${next.length + 1}`);
+    if (workspace) {
+      const count = next.filter(layer => lifecycle(layer) === 'active').length;
+      setPartName(count === 1 ? 'Vocals' : `Layer ${count + 1}`);
+    }
   }
 
   function recordAnother(id?: string) {
@@ -621,11 +681,11 @@ export function useStudio(startInWorkspace = false) {
   return {
     songId, cloudStatus: cloud.status(songId, localRevision), cloudError: cloud.errors[songId], retryCloud: cloud.retry,
     title, setTitle, artwork, setArtwork, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, audioError, retrySave: () => persistSong(), openMySongs,
-    layers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
+    layers, archivedLayers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
-    togglePlayback, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
-    beginEdit, updateClip, chooseTake, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
+    togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
+    beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
     enableMicrophone, record, stopRecording, cancelSetup, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beat, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,
     setTempo: (value: number) => { stopMetronome(); setTempo(Math.max(40, Math.min(240, Number.isFinite(value) ? value : 84))); },

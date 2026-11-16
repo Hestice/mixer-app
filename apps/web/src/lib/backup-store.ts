@@ -1,3 +1,5 @@
+import type { CloudSong } from './cloud-manifest';
+import { lifecycle, type LibraryPatch } from './library-entry';
 import { hasLegacyRecordings, storeRecordingContent, type StoredSong } from './recording-storage';
 import { openDatabase, openLocalSong, readLocal, songChanged, summarizeSong, type SavedSong } from './song-store';
 
@@ -6,8 +8,10 @@ export interface BackupLink {
   ownerId: string;
   remoteId: string;
   remoteRevision: number;
+  remoteLibraryRevision?: number;
   syncedLocalRevision: number;
   recovered?: boolean;
+  libraryEdit?: { baseRevision: number; revision: number; patch: LibraryPatch };
   attempt?: { commitId: string; localRevision: number };
 }
 export interface BackupPreference { id: string; enabled: boolean; since: number }
@@ -28,7 +32,7 @@ export async function setBackupPreference(ownerId: string, enabled: boolean) {
 // Claiming a song requires an explicit selection (or the opted-in new-song rule).
 // Ownership is separate from musical edits, so claiming doesn't invalidate an editor.
 export async function enableBackup(id: string, ownerId: string): Promise<BackupLink> {
-  const { audioError, protectionError } = await openLocalSong(id, ownerId);
+  const { audioError, protectionError } = await openLocalSong(id, ownerId, true);
   if (audioError) throw audioError;
   if (protectionError) throw protectionError;
   const db = await openDatabase();
@@ -97,6 +101,51 @@ export async function installCloudSong(song: SavedSong, link: BackupLink, expect
   });
 }
 
+// Mirror cloud library metadata onto clean device copies without downloading audio.
+export async function cacheCloudLibrary(ownerId: string, cloudSongs: CloudSong[]) {
+  const cloud = new Map(cloudSongs.filter(song => song.owner_id === ownerId).map(song => [song.id, song]));
+  const db = await openDatabase();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['songs', 'summaries', 'backups'], 'readwrite');
+    const backups = tx.objectStore('backups');
+    const summaries = tx.objectStore('summaries');
+    const songs = tx.objectStore('songs');
+    let changed = false;
+    const request = backups.getAll();
+    request.onsuccess = () => {
+      for (const link of request.result as BackupLink[]) {
+        const remote = cloud.get(link.remoteId);
+        if (!remote || link.ownerId !== ownerId || remote.revision < Math.max(link.remoteRevision, link.remoteLibraryRevision ?? 0) || link.libraryEdit || link.attempt) continue;
+        const summaryRequest = summaries.get(link.id);
+        summaryRequest.onsuccess = () => {
+          const summary = summaryRequest.result as ReturnType<typeof summarizeSong> | undefined;
+          if (!summary || summary.ownerId !== ownerId || summary.revision !== link.syncedLocalRevision) return;
+          const title = link.recovered ? summary.title : remote.content.title.trim() || 'Untitled song';
+          const remoteState = lifecycle(remote.content);
+          // Deletion is terminal, including against a stale server response.
+          const checkpoint = { ...link, remoteLibraryRevision: remote.revision };
+          if (lifecycle(summary) === 'deleted' || (title === summary.title && lifecycle(summary) === remoteState)) {
+            if (remote.revision > Math.max(link.remoteRevision, link.remoteLibraryRevision ?? 0)) backups.put(checkpoint);
+            return;
+          }
+          const songRequest = songs.get(link.id);
+          songRequest.onsuccess = () => {
+            const song = songRequest.result as StoredSong | undefined;
+            if (!song || song.revision !== summary.revision || song.ownerId !== ownerId) return;
+            const next = { ...song, title, archivedAt: remote.content.archivedAt, deletedAt: remote.content.deletedAt, revision: song.revision + 1, updatedAt: Date.parse(remote.updated_at) };
+            songs.put(next);
+            summaries.put(summarizeSong(next));
+            backups.put({ ...checkpoint, syncedLocalRevision: next.revision });
+            changed = true;
+          };
+        };
+      }
+    };
+    tx.oncomplete = () => { db.close(); if (changed) songChanged(); resolve(); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  });
+}
+
 // Only fully backed-up copies may be removed. Unsynced work is retained.
 export async function removeDownloadedCopies(ownerId: string): Promise<number> {
   const db = await openDatabase();
@@ -110,7 +159,7 @@ export async function removeDownloadedCopies(ownerId: string): Promise<number> {
         const songRequest = tx.objectStore('songs').get(link.id);
         songRequest.onsuccess = () => {
           const song = songRequest.result as SavedSong | undefined;
-          if (song && song.revision === link.syncedLocalRevision && !link.attempt) {
+          if (song && song.revision === link.syncedLocalRevision && !link.attempt && !link.libraryEdit) {
             for (const name of ['songs', 'summaries', 'backups']) tx.objectStore(name).delete(link.id);
             count++;
           }

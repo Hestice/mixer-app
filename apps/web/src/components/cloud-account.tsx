@@ -1,5 +1,6 @@
 'use client';
 
+import { Cloud } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useCloud } from './cloud-provider';
 
@@ -46,10 +47,12 @@ export function CloudAccount() {
   }
 
   return <section className="cloud-account" aria-labelledby="cloud-title">
-    <div><span className="studio-eyebrow">A COPY BEYOND THIS DEVICE</span><h2 id="cloud-title">{cloud.user ? 'Your cloud backup' : 'Keep your songs close.'}</h2><p>{cloud.user ? cloud.user.email : 'Sign in to back up your recordings and open them on another device. Local autosave stays on.'}</p></div>
+    <div className="cloud-account-identity">
+      <span className="cloud-account-icon"><Cloud size={21} aria-hidden="true" /></span>
+      <div><h2 id="cloud-title">Cloud backup</h2><p>{cloud.user ? cloud.user.email : 'Sign in to back up your songs and open them on another device.'}</p></div>
+    </div>
     {!cloud.ready ? <p role="status">Checking sign-in…</p> : !cloud.configured ? <p>Cloud backup isn’t connected yet. You can keep recording and saving on this device.</p> : cloud.user ? <div className="cloud-account-options">
       <label className="studio-check"><input type="checkbox" checked={cloud.autoBackup} disabled={busy} onChange={(event) => { setError(''); void cloud.setAutomatic(event.target.checked).catch(() => setError('Could not update your backup preference. Try again.')); }} />Automatically back up new songs on this device</label>
-      <p className="studio-help">Existing device-only songs stay local until you select them below.</p>
       <details><summary>Sign-out options</summary><label className="studio-check"><input type="checkbox" checked={removeCopies} onChange={(event) => setRemoveCopies(event.target.checked)} />Remove fully backed-up copies from this device</label><p className="studio-help">Cloud backups remain. Songs with unsynced changes stay on this device and are hidden until you sign back in. Local files are not encrypted by the app.</p><button className="text-button" disabled={busy} onClick={() => void signOut()}>{busy ? 'Signing out…' : 'Sign out on this device'}</button></details>
     </div> : sentTo && !codeMode ? <SignInEmailSent email={sentTo} busy={busy} onResend={() => void send()} onChangeEmail={() => { setSentTo(''); setError(''); }} /> : sentTo ? <form className="cloud-signin" onSubmit={verify}><label className="studio-field">Code sent to {sentTo}<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6,10}" minLength={6} maxLength={10} required value={code} onChange={(event) => setCode(event.target.value)} autoFocus /></label><button className="button button-primary" disabled={busy}>{busy ? 'Checking code…' : 'Verify and sign in'}</button><div className="cloud-inline-actions"><button className="text-button" type="button" disabled={busy} onClick={() => void send()}>Send another code</button><button className="text-button" type="button" disabled={busy} onClick={() => { setSentTo(''); setCode(''); setError(''); }}>Use a different email</button></div></form> : <form className="cloud-signin" onSubmit={send}><label className="studio-field">Email address<input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label><button className="button button-primary" disabled={busy}>{busy ? 'Sending email…' : codeMode ? 'Email me a sign-in code' : 'Email me a sign-in link'}</button><p className="studio-help">No password. Signing in won’t upload existing songs.</p></form>}
     {error && <p className="cloud-error" role="alert">{error}</p>}

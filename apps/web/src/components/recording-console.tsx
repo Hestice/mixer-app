@@ -4,21 +4,29 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Studio } from '../hooks/use-studio';
 import { timeLabel, type Layer } from '../lib/session';
 import { Mic, Play, Pause, Square, Plus, Download, RotateCcw, Headphones, Check, X } from './icons';
-import { Tonearm } from './tonearm';
 import { ClipEditor, TakePicker } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
 import { Waveform } from './waveform';
 import { useRecordNavigation } from './record-transition';
-import { RecordDisc } from './record-artwork';
+import { StudioTurntable } from './studio-turntable';
 import { RecordCustomizer } from './record-customizer';
+import { Archive } from 'lucide-react';
+import { LibraryActions } from './library-actions';
 import { SongTimeline, preciseTime } from './song-timeline';
 import '../app/studio.css';
+
+function LayerActions({ layer, studio, archived }: { layer: Layer; studio: Studio; archived?: boolean }) {
+  return <LibraryActions kind="layer" title={layer.name} archived={archived}
+    disabled={studio.locked || studio.busy || studio.retakeLayerId === layer.id}
+    onAction={action => action.type === 'rename' ? studio.renameLayer(layer.id, action.title) : studio.manageLayer(layer.id, action.type)}
+    onError={studio.setError} />;
+}
 
 function Track({ layer, studio, span }: { layer: Layer; studio: Studio; span: number }) {
   const duration = clipBounds(layer).length;
   const audible = studio.soloId ? studio.soloId === layer.id : layer.enabled;
   return <article className={`studio-track ${audible ? '' : 'is-muted'}`} aria-label={`${layer.name} layer`}>
-    <div className="studio-track-head"><span className={`layer-color ${layer.kind}-color`} /><h3>{layer.name}</h3><time>{timeLabel(duration)}</time></div>
+    <div className="studio-track-head"><span className={`layer-color ${layer.kind}-color`} /><h3>{layer.name}</h3><time>{timeLabel(duration)}</time><LayerActions layer={layer} studio={studio} /></div>
     <TakePicker layer={layer} studio={studio} />
     <ClipEditor layer={layer} studio={studio} span={span} detailsOnly />
     <div className="studio-track-controls">
@@ -87,14 +95,15 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
       {studio.cloudStatus && <div className="studio-cloud-status" role="status"><span>{studio.cloudStatus}</span>{studio.cloudError && <><p>{studio.cloudError}</p><button className="text-button" onClick={studio.retryCloud}>Retry backup</button></>}</div>}
       <div className="studio-body">
         <section className="studio-song" aria-labelledby="studio-song-title">
-          <div className="studio-song-top">
-            <div className="studio-turntable" data-studio-record={studio.songId}><div className="platter-surround"><button className={`platter ${studio.playing ? 'spinning' : ''}`} aria-label={studio.playing ? 'Pause song' : 'Play song'} disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}><RecordDisc artwork={studio.artwork} /></button><Tonearm playing={studio.playing} teach={false} /></div><button className="text-button studio-art-edit" disabled={studio.locked || studio.busy} onClick={()=>setCustomizing(true)}>Edit record</button></div>
-            <div className="studio-song-summary"><span className="studio-eyebrow">ONE PART AT A TIME</span><h1 id="studio-song-title">Your song</h1><p>{studio.layers.length ? `${studio.layers.length} ${studio.layers.length === 1 ? 'layer' : 'layers'} · ${timeLabel(duration)}` : 'A little room for your next idea.'}</p><div className="studio-transport"><button className="button button-light" disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}>{studio.playing ? <Pause size={15} /> : <Play size={15} />}{studio.playing ? 'Pause' : 'Play song'}</button><time>{preciseTime(studio.position)}</time></div></div>
-          </div>
+          <StudioTurntable studio={studio} span={span} duration={duration} onEdit={() => setCustomizing(true)} />
           <div className="studio-layers-heading"><h2>Layers in your song</h2><span>Record freely · No looping</span></div>
           <SongTimeline studio={studio} span={span} />
           <div className="studio-tracks">{studio.layers.map((layer) => <Track key={layer.id} layer={layer} studio={studio} span={span} />)}</div>
           {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={state !== 'idle' || studio.busy} onClick={firstLayer}><Mic size={17} />Record your first layer</button></div>}
+          {!!studio.archivedLayers.length && <details className="layer-archive">
+            <summary><Archive size={14} aria-hidden="true" /> Archived layers <span>{studio.archivedLayers.length}</span></summary>
+            <ul>{studio.archivedLayers.map(layer => <li key={layer.id}><span>{layer.name}</span><LayerActions layer={layer} studio={studio} archived /></li>)}</ul>
+          </details>}
           {!!studio.layers.length && <button className="studio-add" disabled={studio.locked || studio.busy || !!studio.candidate} onClick={() => { recordButton.current?.focus(); recordButton.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); if (state === 'idle') void studio.enableMicrophone(); }}><Plus size={16} />Add another layer</button>}
           <div className="studio-song-bottom"><label>Song volume<input type="range" min="0" max="1" step=".01" value={studio.volume} aria-label="Song volume" onChange={(event) => studio.setVolume(Number(event.target.value))} /></label><span>All parts share the song timeline. Volume and take choices are below.</span></div>
           {!!studio.layers.length && <div className="studio-export">
