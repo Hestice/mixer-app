@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useSyncExternalStore, type RefObject } from 'react';
-import { ArrowLeft, AudioLines, Check, ChevronDown, Download, Headphones, LoaderCircle, Mic, MicOff,
-  Music2, Pause, Play, RotateCcw, ScanLine, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { useId, useState, useSyncExternalStore, type RefObject } from 'react';
+import { Activity, ArrowLeft, AudioLines, Check, ChevronDown, Download, Headphones, LoaderCircle, Mic, MicOff,
+  Music2, Pause, Play, RotateCcw, ScanLine, SlidersHorizontal, Square, Timer, Trash2, X, type LucideIcon } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
 import { timeLabel, type Layer } from '../lib/session';
 import { TakePicker } from './clip-editor';
@@ -17,6 +17,28 @@ function subscribeToWidth(onChange: () => void) {
   const query = window.matchMedia(narrowQuery);
   query.addEventListener('change', onChange);
   return () => query.removeEventListener('change', onChange);
+}
+
+function CaptureSwitch({ label, name, description, icon: Icon, checked, disabled, onToggle }: {
+  label: string;
+  name?: string;
+  description: string;
+  icon: LucideIcon;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const tooltipId = useId();
+  const [dismissed, setDismissed] = useState(false);
+  return <div className="studio-switch-option" data-dismissed={dismissed}
+    onPointerEnter={() => setDismissed(false)} onBlur={() => setDismissed(false)}>
+    <button className="studio-capture-switch" type="button" role="switch" aria-label={name}
+      aria-describedby={tooltipId} aria-checked={checked} disabled={disabled} onClick={onToggle}
+      onKeyDown={event => { if (event.key === 'Escape') setDismissed(true); }}>
+      <Icon size={13} aria-hidden="true" />{label}<span className="studio-switch-track" aria-hidden="true" />
+    </button>
+    <span className="studio-switch-tooltip" id={tooltipId} role="tooltip">{description}</span>
+  </div>;
 }
 
 function MicrophoneInput({ studio, recording }: { studio: Studio; recording: boolean }) {
@@ -198,14 +220,10 @@ export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpe
       </button>
       {showCaptureControls && <div className="studio-capture-preferences">
         {setup && <div className="studio-capture-switches">
-          <button className="studio-capture-switch" type="button" role="switch" title="Four beats before recording"
-            aria-checked={studio.countIn} disabled={studio.busy} onClick={() => studio.setCountIn(!studio.countIn)}>
-            <span className="studio-switch-track" aria-hidden="true" />Count-in
-          </button>
-          <button className="studio-capture-switch" type="button" role="switch" aria-label="Beat during take"
-            aria-checked={beatOn} disabled={studio.busy} onClick={() => studio.setMetronomeMode(beatOn ? 'off' : 'visual')}>
-            <span className="studio-switch-track" aria-hidden="true" />Beat
-          </button>
+          <CaptureSwitch label="Count-in" description="Gives you four beats before recording starts." icon={Timer}
+            checked={studio.countIn} disabled={studio.busy} onToggle={() => studio.setCountIn(!studio.countIn)} />
+          <CaptureSwitch label="Beat" name="Beat during take" description="Shows a pulse on screen to help you stay in time while recording." icon={Activity}
+            checked={beatOn} disabled={studio.busy} onToggle={() => studio.setMetronomeMode(beatOn ? 'off' : 'visual')} />
         </div>}
         {setup && studio.candidate && <button className="studio-toolbar-button" type="button" disabled={studio.busy} onClick={() => {
           studio.returnToTake();
