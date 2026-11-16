@@ -88,8 +88,9 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, re
               <span className="archive-record-check">{isSelected && <Check size={13} strokeWidth={2.5} />}</span>
             </span>
             <button type="button" className="archive-record-picker" aria-label={song.title} aria-pressed={isSelected}
-              aria-disabled={blocked} onPointerEnter={event => {
+              aria-disabled={blocked} onPointerMove={event => {
                 if (event.pointerType === 'touch' || restoring) return;
+                if (song.id === hoveredId && song.id === browsed.id) return;
                 setBrowsedId(song.id);
                 setHoveredId(song.id);
               }}

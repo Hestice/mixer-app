@@ -48,7 +48,6 @@
   --side-skew: -21.8deg;
   --sleeve: calc(var(--face) * .83);
   --clearance: calc(var(--face) * .078);
-  --lift: 70px;
   --wood: repeating-linear-gradient(0deg, #e5c5a314 0 1px, transparent 2px 6px);
   --weave:
     radial-gradient(ellipse, #6b523c 20%, transparent 24%) 0 0 / 8px 8px,
@@ -57,7 +56,7 @@
   position: relative;
   isolation: isolate;
   width: var(--width);
-  height: calc(var(--sleeve) + var(--rise) + var(--drop) + var(--lift) + 12px);
+  height: calc(var(--sleeve) + var(--rise) + var(--drop) + 18px);
   margin: 0 auto 22px;
 }
 
@@ -92,6 +91,10 @@
 .archive-records { position: absolute; inset: 0; padding: 0; margin: 0; list-style: none; }
 .archive-record {
   --position: calc(var(--depth) * (.8 - var(--slot) * .145));
+  --lean: -6deg;
+  --sleeve-scale: 1;
+  --selected-rise: 0px;
+  --disc-peek: 0px;
   position: absolute;
   left: calc(var(--clearance) + var(--position));
   bottom: calc(var(--drop) + var(--position) * .4 - var(--clearance) * .18 + 6px);
@@ -104,10 +107,12 @@
   position: absolute;
   display: block;
   pointer-events: none;
-  transition: transform .36s cubic-bezier(.22,.75,.25,1);
+}
+.archive-record-art, .archive-record-picker, .archive-record-disc {
+  transition: transform .32s cubic-bezier(.22,.75,.25,1);
 }
 .archive-record-art, .archive-record-picker {
-  transform: skewY(var(--face-skew)) skewX(-6deg);
+  transform: translateY(var(--selected-rise)) skewY(var(--face-skew)) skewX(var(--lean)) scaleY(var(--sleeve-scale));
   transform-origin: left bottom;
 }
 .archive-record-art {
@@ -128,17 +133,21 @@
   font-size: clamp(12px, 8.5cqw, 18px);
   text-shadow: 0 1px 2px #161b1673;
 }
-.archive-record-disc { inset: 3%; }
-.archive-record[data-selected=true] .archive-record-art {
-  transform: translateY(-9px) skewY(var(--face-skew)) skewX(-6deg);
+.archive-record-disc { inset: 3%; transform: translateY(var(--disc-peek)); }
+.archive-record[data-selected=true] {
+  --selected-rise: -8px;
+  --disc-peek: -8px;
 }
-.archive-record[data-selected=true] .archive-record-disc { transform: translateY(-8px); }
-.archive-record[data-browsed=true]:is([data-hovered=true], :has(.archive-record-picker:focus-visible)) .archive-record-art {
-  z-index: 10;
-  transform: translate(-15px, calc(-1 * var(--lift))) skewY(var(--face-skew)) skewX(-6deg);
+/* Sleeves in front lean farther so the record being browsed stays visible. */
+.archive-record[data-browsed=true]:is([data-hovered=true], :has(.archive-record-picker:focus-visible)) {
+  --lean: 13deg;
+  --sleeve-scale: .84;
+  --disc-peek: -12px;
 }
-.archive-record[data-browsed=true]:is([data-hovered=true], :has(.archive-record-picker:focus-visible)) .archive-record-disc {
-  transform: translateY(-16px);
+.archive-record:has(~ .archive-record[data-browsed=true][data-hovered=true]),
+.archive-record:has(~ .archive-record[data-browsed=true] .archive-record-picker:focus-visible) {
+  --lean: 21deg;
+  --sleeve-scale: .68;
 }
 
 .archive-record-picker {
@@ -155,14 +164,6 @@
   outline: 2px solid #325031;
   outline-offset: 2px;
 }
-.archive-record[data-selected=true] .archive-record-picker { inset-block-start: -9px; }
-.archive-record[data-hovered=true] .archive-record-picker::before {
-  content: '';
-  position: absolute;
-  inset: auto 14px calc(100% - 1px) -14px;
-  height: var(--lift);
-}
-
 .archive-record-check {
   position: absolute;
   z-index: 2;
@@ -292,7 +293,7 @@
 .archive-notice:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; }
 
 @media (max-width: 600px) {
-  .archive-crate { --lift: 51px; margin-bottom: 16px; }
+  .archive-crate { margin-bottom: 16px; }
   .archive-header { flex-wrap: wrap; }
   .archive-browse-buttons button { width: 44px; }
   .archive-preview h3 {
