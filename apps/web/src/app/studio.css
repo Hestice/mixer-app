@@ -141,13 +141,15 @@
   position: absolute;
   z-index: 6;
   inset-inline-start: 0;
-  bottom: 100%;
+  inset-block-start: 100%;
   width: max-content;
   max-width: min(208px, calc(100vw - 52px));
   padding: 6px 9px;
   border-radius: 6px;
-  background: #35432e;
-  color: #fff;
+  border: 1px solid #bcae92;
+  background: #fbf4e7;
+  color: #3a3126;
+  box-shadow: 0 3px 12px #42342228;
   font-size: 11px;
   line-height: 1.45;
   visibility: hidden;
@@ -312,6 +314,11 @@
   .studio-capture h2 { font-size: 13px; }
   .studio-capture-toggle { display: inline-flex; min-height: 28px; margin-left: -5px; padding: 3px 5px; font-size: 12px; }
   .studio-capture-toggle[aria-expanded=true] { background: #e8eddf; }
+  .studio-switch-tooltip {
+    inset-block-start: auto;
+    inset-block-end: 100%;
+    max-width: min(208px, calc((100vw - 52px) / 2));
+  }
   .studio-capture .studio-mic-icon { display: none; }
   .studio-record-action { gap: 6px; padding: 8px 10px; font-size: 12px; }
   .studio-capture-drawer { --drawer-height: min(255px, 42cqh); order: -1; }
