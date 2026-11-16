@@ -1,8 +1,10 @@
+import type { RecordArt } from './record-art';
 import { clipBounds } from './clip-edits';
 import type { Layer } from './session';
 import type { MetronomeMode } from './metronome';
 
 export interface SongContent {
+  artwork?: RecordArt;
   title: string;
   retakeLayerId?: string;
   layers: Layer[];
@@ -22,6 +24,7 @@ export interface SavedSong extends SongContent {
   updatedAt: number;
 }
 export interface SongSummary {
+  artwork?: RecordArt;
   id: string;
   ownerId?: string;
   createdAt: number;
@@ -130,7 +133,7 @@ export class SongWriter {
 
 export function summarizeSong(song: SavedSong): SongSummary {
   return { id: song.id, ownerId: song.ownerId, createdAt: song.createdAt, revision: song.revision,
-    title: song.title.trim() || 'Untitled song', updatedAt: song.updatedAt,
+    artwork: song.artwork, title: song.title.trim() || 'Untitled song', updatedAt: song.updatedAt,
     layerCount: song.layers.length, hasTake: !!song.candidate,
     duration: Math.max(0, ...song.layers.map((layer) => clipBounds(layer).end), song.candidate ? clipBounds(song.candidate).end : 0) };
 }

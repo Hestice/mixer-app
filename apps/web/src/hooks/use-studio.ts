@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { appendTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
 import type { ClipEdits } from '../lib/session';
+import type { RecordArt } from '../lib/record-art';
 import { OUTPUT_DELAY } from '../lib/audio-output';
 import { recordingDelay, recordedPlacement } from '../lib/recording-timing';
 import { AudioEngine } from '../lib/audio-engine';
@@ -41,6 +42,7 @@ export function useStudio(startInWorkspace = false) {
   const [workspace, setWorkspace] = useState(startInWorkspace);
   const [withDemo, setWithDemo] = useState(false);
   const [title, setTitle] = useState('Untitled song');
+  const [artwork, setArtwork] = useState<RecordArt | undefined>();
   const [localReady, setLocalReady] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -88,8 +90,8 @@ export function useStudio(startInWorkspace = false) {
   const mixRef = useRef(mix);
   mixRef.current = mix;
 
-  const content = useMemo<SongContent>(() => ({ title, layers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode }),
-    [title, layers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode]);
+  const content = useMemo<SongContent>(() => ({ title, artwork, layers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode }),
+    [title, artwork, layers, candidate, retakeLayerId, withDemo, volume, partName, tempo, countIn, metronomeMode]);
   const contentRef = useRef(content);
   contentRef.current = content;
   const saveState = !localReady ? 'loading' : saveError ? 'error' : savedContent === content ? 'saved' : 'saving';
@@ -122,7 +124,7 @@ export function useStudio(startInWorkspace = false) {
         if (song.ownerId && song.ownerId !== cloud.user?.id) { setLoadError('Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.'); return; }
         setLoadError(''); setSongId(id); setOwnerId(song.ownerId); setLocalRevision(song.revision);
         writerRef.current = new SongWriter(id, song.revision);
-        setTitle(song.title); setLayers(song.layers); setCandidate(song.candidate); setRetakeLayerId(song.retakeLayerId);
+        setArtwork(song.artwork); setTitle(song.title); setLayers(song.layers); setCandidate(song.candidate); setRetakeLayerId(song.retakeLayerId);
         setWithDemo(song.withDemo); setVolumeState(song.volume); setPartName(song.partName);
         setTempo(song.tempo); setCountIn(song.countIn);
         // Headphones must be confirmed again before any audible click.
@@ -586,7 +588,7 @@ export function useStudio(startInWorkspace = false) {
 
   return {
     songId, cloudStatus: cloud.status(songId, localRevision), cloudError: cloud.errors[songId], retryCloud: cloud.retry,
-    title, setTitle, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, retrySave: () => persistSong(), openMySongs,
+    title, setTitle, artwork, setArtwork, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, retrySave: () => persistSong(), openMySongs,
     layers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
