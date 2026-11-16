@@ -2,6 +2,7 @@ import { readRecording } from './recording-storage';
 import { estimateBeatAlignment } from './beat-alignment';
 import { createSongOutput } from './audio-output';
 import { clipBounds, playbackWindow } from './clip-edits';
+import { ScratchPlayback } from './scratch-playback';
 import { extractPeaks, type Layer } from './session';
 
 /** The tour loops; the recording workspace plays each part once on a shared clock. */
@@ -11,6 +12,7 @@ export class AudioEngine {
   private buffers = new Map<string, AudioBuffer>();
   private sources = new Map<string, { source: AudioBufferSourceNode; gain: GainNode }>();
   private loading: Promise<void> | null = null;
+  private scrub: ScratchPlayback | null = null;
   private startedAt = 0;
   private pausedAt = 0;
   private loopDuration = 80 / 7;
@@ -72,7 +74,7 @@ export class AudioEngine {
 
   get duration() { return this.loopDuration; }
   get playbackClock() {
-    return this.context && this.playing ? { context: this.context, startTime: this.startedAt } : null;
+    return this.context && this.playing && !this.scrub ? { context: this.context, startTime: this.startedAt } : null;
   }
 
   measureBeat(layer: Layer) {
@@ -84,7 +86,7 @@ export class AudioEngine {
     return buffer ? extractPeaks(buffer.getChannelData(0)) : [];
   }
   get position() {
-    if (!this.context || !this.playing) return this.pausedAt;
+    if (!this.context || !this.playing || this.scrub) return this.pausedAt;
     const elapsed = Math.max(0, this.context.currentTime - this.startedAt);
     return this.looping ? elapsed % this.loopDuration : Math.min(elapsed, this.loopDuration);
   }
@@ -93,6 +95,7 @@ export class AudioEngine {
     const context = await this.ready();
     if (!this.looping) this.loopDuration = Math.max(0, ...layers.map((layer) => clipBounds(layer).end));
     if (restart) this.pausedAt = from ?? 0;
+    this.clearScrub();
     this.stopSources();
     const offset = this.looping ? this.pausedAt % this.loopDuration : this.pausedAt >= this.loopDuration ? 0 : this.pausedAt;
     const when = context.currentTime + 0.04;
@@ -102,6 +105,7 @@ export class AudioEngine {
   /** Schedule backing tracks at the exact same audio time as microphone capture. */
   playAt(layers: Layer[], when: number, position = 0) {
     if (!this.context) throw new Error('Audio is not ready.');
+    this.clearScrub();
     this.stopSources();
     this.start(layers, when, position);
   }
@@ -112,6 +116,34 @@ export class AudioEngine {
     this.pause();
     this.pausedAt = Math.max(0, position);
     if (wasPlaying && this.context && position < this.loopDuration) this.start(layers, this.context.currentTime + .04, this.pausedAt);
+  }
+
+  beginScrub(heldFor = 0) {
+    if (!this.context || !this.master || !this.playing || this.looping || this.scrub) return false;
+    this.pausedAt = this.position;
+    this.stopSources();
+    this.scrub = new ScratchPlayback(this.context, this.master, this.buffers, this.pausedAt, heldFor);
+    return true;
+  }
+
+  scrubTo(layers: Layer[], position: number, audible: boolean) {
+    if (!this.scrub) return;
+    this.pausedAt = position;
+    this.scrub.move(layers, position, audible);
+  }
+
+  endScrub(layers: Layer[]) {
+    if (!this.scrub || !this.context) return false;
+    const release = this.clearScrub(true);
+    if (this.pausedAt < this.loopDuration) this.start(layers, this.context.currentTime + release, this.pausedAt);
+    else this.playing = false;
+    return true;
+  }
+
+  private clearScrub(fade = false) {
+    const release = this.scrub?.stop(fade) ?? 0;
+    this.scrub = null;
+    return release;
   }
 
   private start(layers: Layer[], when: number, offset: number) {
@@ -156,7 +188,7 @@ export class AudioEngine {
   }
 
   sync(layers: Layer[]) {
-    if (!this.context || !this.playing) return;
+    if (!this.context || !this.playing || this.scrub) return;
     const ids = new Set(layers.map((layer) => layer.id));
     for (const [id, nodes] of this.sources) {
       if (!ids.has(id)) { nodes.source.stop(); nodes.source.disconnect(); nodes.gain.disconnect(); this.sources.delete(id); }
@@ -175,6 +207,7 @@ export class AudioEngine {
   pause() {
     this.pausedAt = this.position;
     this.playing = false;
+    this.clearScrub();
     this.stopSources();
   }
 
