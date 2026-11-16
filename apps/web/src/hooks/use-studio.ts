@@ -38,6 +38,8 @@ export function useStudio(startInWorkspace = false) {
   const editHistory = useRef<{ layers: Layer[]; candidate: Layer | null; retakeLayerId?: string }[]>([]);
   const [undoCount, setUndoCount] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [stopVersion, setStopVersion] = useState(0);
+  const playbackRequest = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [exportStatus, setExportStatus] = useState('');
@@ -270,19 +272,43 @@ export function useStudio(startInWorkspace = false) {
 
   const report = (reason: unknown) => setError(reason instanceof Error ? reason.message : 'Something went wrong. Please try again.');
 
-  async function togglePlayback() {
+  const readSongPosition = useCallback(() => engineRef.current?.position ?? 0, []);
+
+  function pausePlayback() {
+    const engine = getEngine();
+    engine.pause();
+    setPlaying(false);
+    setPosition(engine.position);
+    return engine.position;
+  }
+
+  function stopPlayback() {
+    if (locked) return;
+    playbackRequest.current++;
+    getEngine().reset();
+    setPlaying(false);
+    setPosition(0);
+    setStopVersion(version => version + 1);
+  }
+
+  async function togglePlayback(cue?: () => Promise<void>) {
     if (locked || busy) return;
     setError('');
     const engine = getEngine();
-    if (playing) { engine.pause(); setPlaying(false); return; }
+    if (engine.playing) { pausePlayback(); return; }
+    if (workspace && !layers.length && !candidate) return;
+    const request = ++playbackRequest.current;
     setBusy(true);
     try {
-      await prepareAudio(previewCandidate);
-      if (workspace && !layers.length && !candidate) return;
+      await Promise.all([prepareAudio(previewCandidate), cue?.()]);
+      if (request !== playbackRequest.current || disposed.current) return;
       await engine.play(mixRef.current);
+      if (request !== playbackRequest.current) { engine.reset(); return; }
       engine.volume(volume);
       setPlaying(true);
-    } catch (reason) { report(reason); }
+    } catch (reason) {
+      if (request === playbackRequest.current) report(reason);
+    }
     finally { setBusy(false); }
   }
 
@@ -658,7 +684,7 @@ export function useStudio(startInWorkspace = false) {
     layers, archivedLayers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
-    togglePlayback, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
+    togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
     enableMicrophone, record, stopRecording, cancelSetup, download, downloadSong, exportStatus, exportBusy, reviewTake,
     partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beat, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,

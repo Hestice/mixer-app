@@ -161,10 +161,10 @@ input[type=range] { accent-color: #687b59; }
 
 /* A connected arm pivots as one piece. The stylus lands at radius 38 in a 100-unit record. */
 .turntable-arm { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.arm-assembly { transform-origin: 96px 4px; transition: transform .7s cubic-bezier(.4,0,.2,1); }
+.arm-assembly { transform-origin: 96px 4px; }
 .hardware-labels { font: 4.5px var(--font); fill: #586c48; }
-.engaged .stylus-tip { stroke: #f6e4bf; stroke-width: .4; }
-.resting .stylus-tip { fill: #6b795a; }
+.stylus-tip { fill: #6b795a; }
+.arm-assembly[data-on-groove] .stylus-tip { fill: #c7a261; stroke: #f6e4bf; stroke-width: .4; }
 .credits-modal h3 { margin: 25px 0 14px; font-size: 16px; font-weight: 600; }
 .credits-modal dl { display: grid; grid-template-columns: 70px 1fr; gap: 10px 15px; font-size: 13px; line-height: 1.45; }
 .credits-modal dt { font-weight: 500; }.credits-modal dd { margin: 0; color: var(--muted); }
@@ -210,7 +210,6 @@ input[type=range] { accent-color: #687b59; }
 }
 @media(prefers-reduced-motion:reduce) {
  .motion-tour .layer { will-change: auto; }
- .arm-assembly { transition: none; }
 }
 
 .motion-tour .hardware-labels { opacity: calc(1 - var(--unfold,0)); }

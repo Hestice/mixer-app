@@ -4,12 +4,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Studio } from '../hooks/use-studio';
 import { timeLabel, type Layer } from '../lib/session';
 import { Mic, Play, Pause, Square, Plus, Download, RotateCcw, Headphones, Check, X } from './icons';
-import { Tonearm } from './tonearm';
 import { ClipEditor, TakePicker } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
 import { Waveform } from './waveform';
 import { useRecordNavigation } from './record-transition';
-import { RecordDisc } from './record-artwork';
+import { StudioTurntable } from './studio-turntable';
 import { RecordCustomizer } from './record-customizer';
 import { Archive } from 'lucide-react';
 import { LibraryActions } from './library-actions';
@@ -96,10 +95,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
       {studio.cloudStatus && <div className="studio-cloud-status" role="status"><span>{studio.cloudStatus}</span>{studio.cloudError && <><p>{studio.cloudError}</p><button className="text-button" onClick={studio.retryCloud}>Retry backup</button></>}</div>}
       <div className="studio-body">
         <section className="studio-song" aria-labelledby="studio-song-title">
-          <div className="studio-song-top">
-            <div className="studio-turntable" data-studio-record={studio.songId}><div className="platter-surround"><button className="platter" aria-label={studio.playing ? 'Pause song' : 'Play song'} disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}><RecordDisc artwork={studio.artwork} playing={studio.playing} /></button><Tonearm playing={studio.playing} teach={false} /></div><button className="text-button studio-art-edit" disabled={studio.locked || studio.busy} onClick={()=>setCustomizing(true)}>Edit record</button></div>
-            <div className="studio-song-summary"><span className="studio-eyebrow">ONE PART AT A TIME</span><h1 id="studio-song-title">Your song</h1><p>{studio.layers.length ? `${studio.layers.length} ${studio.layers.length === 1 ? 'layer' : 'layers'} · ${timeLabel(duration)}` : 'A little room for your next idea.'}</p><div className="studio-transport"><button className="button button-light" disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}>{studio.playing ? <Pause size={15} /> : <Play size={15} />}{studio.playing ? 'Pause' : 'Play song'}</button><time>{preciseTime(studio.position)}</time></div></div>
-          </div>
+          <StudioTurntable studio={studio} span={span} duration={duration} onEdit={() => setCustomizing(true)} />
           <div className="studio-layers-heading"><h2>Layers in your song</h2><span>Record freely · No looping</span></div>
           <SongTimeline studio={studio} span={span} />
           <div className="studio-tracks">{studio.layers.map((layer) => <Track key={layer.id} layer={layer} studio={studio} span={span} />)}</div>
