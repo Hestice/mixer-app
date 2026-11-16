@@ -11,11 +11,9 @@ import { useCloud } from '../../components/cloud-provider';
 import { cloudMessage } from '../../lib/supabase-transport';
 import '../studio.css';
 
-const OPENING_MS = 680;
-
 function SongArtwork({ id, title, artwork, opening = false, returning = false }: { id: string; title: string; artwork?: RecordArt; opening?: boolean; returning?: boolean }) {
   return <div className={`song-artwork${opening ? ' is-opening' : ''}${returning ? ' is-returning' : ''}`} aria-hidden="true">
-    {opening && <span className="song-artwork-disc"><RecordDisc artwork={artwork} /></span>}
+    <span className="song-artwork-disc"><RecordDisc artwork={artwork} /></span>
     <div className="song-sleeve" data-song-sleeve={id}><RecordSleeve artwork={artwork} title={title} /></div>
   </div>;
 }
@@ -75,23 +73,15 @@ export default function SongsPage() {
     const run = ++openingRun.current;
     setBusy(row); setActionError(''); setOpening(row);
     try {
-      const delay = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : OPENING_MS;
-      const source = async () => {
-        if (!delay) return undefined;
-        await new Promise(resolve => setTimeout(resolve, delay));
-        const sleeve = document.querySelector(`[data-song-sleeve="${CSS.escape(row)}"]`);
-        const disc = sleeve?.parentElement?.querySelector<HTMLElement>('.custom-vinyl');
-        return disc?.getBoundingClientRect();
-      };
-      const [localId, from] = await Promise.all([remote ? cloud.openRemote(id) : id, source()]);
-      if (openingRun.current === run) enterStudio(localId, from, artwork);
+      const sleeve = document.querySelector<HTMLElement>(`[data-song-sleeve="${CSS.escape(row)}"]`);
+      await enterStudio(async () => remote ? cloud.openRemote(id) : id, sleeve, artwork);
     } catch (reason) {
       if (openingRun.current !== run) return;
       openingRef.current = false;
       setActionError(cloudMessage(reason)); setBusy(''); setOpening(null);
     }
   }
-  return <div className="studio-app">
+  return <div className="studio-app" data-song-collection>
     {opening && <p className="song-opening-status" role="status">Opening song…</p>}
     <header className="studio-header"><a className="wordmark" href="/"><span className="brand-icon" aria-hidden="true"><i /><i /><i /><i /></span>listening room.</a><a className="text-button" href="/studio">New song <span aria-hidden="true">+</span></a></header>
     <main className="songs-page">
