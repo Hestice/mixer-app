@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Studio } from '../hooks/use-studio';
 import { timeLabel, type Layer } from '../lib/session';
 import { Mic, Play, Pause, Square, Plus, Download, RotateCcw, Headphones, Check, X } from './icons';
@@ -8,6 +8,7 @@ import { Tonearm } from './tonearm';
 import { ClipEditor, TakePicker } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
 import { Waveform } from './waveform';
+import { useRecordNavigation } from './record-transition';
 import { RecordDisc } from './record-artwork';
 import { RecordCustomizer } from './record-customizer';
 import { SongTimeline, preciseTime } from './song-timeline';
@@ -33,6 +34,7 @@ function Track({ layer, studio, span }: { layer: Layer; studio: Studio; span: nu
 
 export function RecordingConsole({ studio }: { studio: Studio }) {
   const { title, setTitle } = studio;
+  const { arrive, flight, finish, returnToSongs, rememberArtwork } = useRecordNavigation();
   const [notice, setNotice] = useState('');
   const [customizing,setCustomizing]=useState(false);
   const recordButton = useRef<HTMLButtonElement>(null);
@@ -46,7 +48,13 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   const meter = Math.min(100, studio.inputLevel * 100);
   const action = { idle: 'Connect microphone', requesting: 'Connecting microphone…', ready: 'Record layer', countdown: 'Cancel count-in', recording: 'Stop recording', processing: 'Preparing take…', review: studio.retakeLayerId ? 'Use this take' : 'Keep this layer' }[state];
 
-  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, [studio.localReady]);
+  useLayoutEffect(() => { if (studio.songId) rememberArtwork(studio.songId, studio.artwork); }, [rememberArtwork, studio.songId, studio.artwork]);
+  useLayoutEffect(() => {
+    if (flight?.direction !== 'studio') return;
+    if (studio.loadError) finish();
+    else if (studio.localReady && studio.songId) arrive('studio', studio.songId);
+  }, [arrive, finish, flight, studio.loadError, studio.localReady, studio.songId]);
+  useEffect(() => { if (!flight) heading.current?.focus({ preventScroll: true }); }, [flight, studio.localReady]);
 
   function keep() {
     const name = studio.candidate?.name;
@@ -71,7 +79,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   return <div className="studio-app">
     {customizing && <RecordCustomizer title={title} artwork={studio.artwork} onClose={()=>setCustomizing(false)} onDone={art=>{studio.setArtwork(art);setCustomizing(false);setNotice('Record appearance saved.');}} />}
     <a className="skip-link" href="#studio-capture">Skip to recording controls</a>
-    <header className="studio-header"><span className="wordmark"><span className="brand-icon" aria-hidden="true"><i /><i /><i /><i /></span>listening room.</span><button className="text-button studio-library-link" disabled={studio.locked || studio.busy} onClick={() => void studio.openMySongs()}>My songs <span aria-hidden="true">↗</span></button></header>
+    <header className="studio-header"><span className="wordmark"><span className="brand-icon" aria-hidden="true"><i /><i /><i /><i /></span>listening room.</span><button className="text-button studio-library-link" disabled={studio.locked || studio.busy} onClick={() => void studio.openMySongs(() => returnToSongs(studio.songId, studio.artwork))}>My songs <span aria-hidden="true">↗</span></button></header>
     <main className="studio-desk" aria-label="Recording console">
       <div className="studio-project"><div><label htmlFor="song-title">YOUR SESSION</label><input id="song-title" ref={heading} aria-label="Song name" maxLength={70} value={title} onChange={(event) => setTitle(event.target.value)} /></div><span className={`studio-storage ${studio.saveState === 'error' ? 'save-failed' : ''}`} role="status"><span aria-hidden="true" />{studio.saveState === 'error' ? 'Not saved' : recording ? 'Recording · save when stopped' : state === 'processing' ? 'Preparing take…' : studio.saveState === 'saved' ? 'Saved on this device' : 'Saving…'}</span></div>
       {studio.saveError && <div className="studio-save-error" role="alert"><p>{studio.saveError}</p><button className="text-button" onClick={() => void studio.retrySave()}>Retry save</button></div>}
@@ -79,7 +87,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
       <div className="studio-body">
         <section className="studio-song" aria-labelledby="studio-song-title">
           <div className="studio-song-top">
-            <div className="studio-turntable"><div className="platter-surround"><button className={`platter ${studio.playing ? 'spinning' : ''}`} aria-label={studio.playing ? 'Pause song' : 'Play song'} disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}><RecordDisc artwork={studio.artwork}><span className="studio-record-caption">SIDE A</span>{studio.playing ? <Pause size={23} fill="currentColor" /> : <Play size={23} fill="currentColor" />}<span className="studio-record-caption">YOUR SONG</span></RecordDisc></button><Tonearm playing={studio.playing} teach={false} /></div><button className="text-button studio-art-edit" disabled={studio.locked || studio.busy} onClick={()=>setCustomizing(true)}>Edit record</button></div>
+            <div className="studio-turntable" data-studio-record={studio.songId}><div className="platter-surround"><button className={`platter ${studio.playing ? 'spinning' : ''}`} aria-label={studio.playing ? 'Pause song' : 'Play song'} disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}><RecordDisc artwork={studio.artwork} /></button><Tonearm playing={studio.playing} teach={false} /></div><button className="text-button studio-art-edit" disabled={studio.locked || studio.busy} onClick={()=>setCustomizing(true)}>Edit record</button></div>
             <div className="studio-song-summary"><span className="studio-eyebrow">ONE PART AT A TIME</span><h1 id="studio-song-title">Your song</h1><p>{studio.layers.length ? `${studio.layers.length} ${studio.layers.length === 1 ? 'layer' : 'layers'} · ${timeLabel(duration)}` : 'A little room for your next idea.'}</p><div className="studio-transport"><button className="button button-light" disabled={!studio.layers.length || studio.locked || studio.busy} onClick={() => void studio.togglePlayback()}>{studio.playing ? <Pause size={15} /> : <Play size={15} />}{studio.playing ? 'Pause' : 'Play song'}</button><time>{preciseTime(studio.position)}</time></div></div>
           </div>
           <div className="studio-layers-heading"><h2>Layers in your song</h2><span>Record freely · No looping</span></div>

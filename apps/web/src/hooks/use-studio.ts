@@ -166,7 +166,7 @@ export function useStudio(startInWorkspace = false) {
     void persistSong(content);
   }, [content, workspace, localReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function openMySongs() {
+  async function openMySongs(navigate: () => void) {
     if (locked || busy) return;
     stopMetronome(); getEngine().pause(); setPlaying(false); setBusy(true);
     try {
@@ -176,7 +176,7 @@ export function useStudio(startInWorkspace = false) {
         if (snapshot === contentRef.current) break;
         snapshot = contentRef.current;
       }
-      releaseMicrophone(); window.location.assign('/songs');
+      releaseMicrophone(); navigate();
     } finally { if (!disposed.current) setBusy(false); }
   }
 
@@ -223,6 +223,7 @@ export function useStudio(startInWorkspace = false) {
 
   useEffect(() => {
     disposed.current = false;
+    if (workspace && !engineRef.current) getEngine().configureSession(layers);
     const interval = setInterval(() => {
       if (!recorderRef.current?.isCapturing) setPosition(engineRef.current?.position ?? 0);
       setPlaying(engineRef.current?.playing ?? false);
@@ -237,6 +238,7 @@ export function useStudio(startInWorkspace = false) {
       metronomeRef.current?.stop();
       engineRef.current?.dispose();
       engineRef.current = null;
+      decodedRecordings.current.clear();
     };
   }, []);
 
