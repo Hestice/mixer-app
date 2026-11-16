@@ -32,6 +32,18 @@ test('all snap points land on complete scenes, with no partially visible layers 
   }
 });
 
+test('the opening deck and four-layer console fit their available space on short screens', () => {
+  for (const [width, viewport, budget] of [[800, 820, 469], [358, 750, 365], [290, 568, 274]]) {
+    const opening = storyGeometry(0, width, viewport, 3, false, budget);
+    const harmony = storyGeometry(CHAPTER_STOPS[3], width, viewport, 4, false, budget);
+    const recording = storyGeometry(1, width, viewport, 4, false, budget);
+    assert.ok(opening.height <= budget, `opening at ${viewport}px`);
+    assert.ok(harmony.height <= budget, `harmony at ${viewport}px`);
+    assert.equal(recording.height, harmony.height);
+    assert.ok(harmony.layersY + harmony.layerTitle + 4 * harmony.rowHeight < harmony.height, 'the fourth row fits inside the deck');
+  }
+});
+
 test('returning to the opening folds up even a song with a kept harmony', () => {
   for (const reduced of [false, true]) {
     const open = storyGeometry(CHAPTER_STOPS[3], 358, 667, 4, reduced);

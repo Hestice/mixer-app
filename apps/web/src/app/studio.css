@@ -385,8 +385,6 @@
 .songs-empty { text-align: center; padding: 50px 12px; }.songs-empty .song-sleeve { margin: 0 auto 28px; }.songs-empty h2 { font: 500 24px 'Manrope',var(--font); letter-spacing: -.6px; }.songs-empty p,.studio-loading p { font-size: 13px; color: var(--muted); line-height: 1.8; }.songs-empty .button { margin-top: 16px; }.songs-actions { display: flex; gap: 12px; margin-top: 24px; }
 @media(max-width:600px) { .songs-page { margin-top: 24px; padding: 0 24px 48px; }.songs-heading h1,.studio-loading h1 { font-size: 34px; }.song-card { gap: 16px; }.song-title { font-size: 16px; }.song-sleeve { width: 66px; height: 66px; }.song-sleeve>span { width: 52px; height: 52px; }.song-sleeve>span::after { width: 19px; height: 19px; }.studio-save-error { padding: 16px 22px; flex-wrap: wrap; } }
 
-.landing-library-link { white-space: nowrap; font-size: 12px; }
-@media(max-width:600px) { .site-header .tour-steps { position: absolute; top: 66px; left: 50%; transform: translateX(-50%); }.landing-library-link { font-size: 11px; } }
 
 .cloud-account { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 30px; margin: 22px 0 28px; padding: 18px 20px; background: #e8eddf80; border: 1px solid #d1dac8; border-radius: 14px; }
 .cloud-account-identity { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }

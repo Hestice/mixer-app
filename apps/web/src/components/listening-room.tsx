@@ -10,7 +10,6 @@ import { LayerStrip } from './layer-strip';
 import { RecordingConsole } from './recording-console';
 import { useStoryMotion } from '../hooks/use-story-motion';
 import { useStoryScroll } from '../hooks/use-story-scroll';
-import { LayerFlight, type Flight } from './layer-flight';
 
 const chapters = [
   { label: 'Listen', title: 'Find your way back to music.', description: 'The platter turns the record. Press Play to set it in motion.', next: 'See what a layer is' },
@@ -25,21 +24,21 @@ export function ListeningRoom() {
   const storyRef = useRef<HTMLElement>(null);
   const sceneRef = useRef<HTMLDivElement>(null);
   const [harmonyKeptManually, setHarmonyKeptManually] = useState(false);
-  const [flight, setFlight] = useState<Flight | null>(null);
-  const finishFlight = useCallback(() => setFlight(null), []);
+  const [keepingHarmony, setKeepingHarmony] = useState(false);
+  const finishKeepingHarmony = useCallback(() => setKeepingHarmony(false), []);
   const keptFocus = useRef<{ id: string; source: Element | null } | null>(null);
   const { progress, goToStop } = useStoryScroll(storyRef, studio.workspace);
   const chapter = chapterFromProgress(progress);
   const buildStage = tourBuildStage(progress);
   const mixChapter = mixChapterFromProgress(progress);
   const harmonyTransfer = layerReveal('harmony', progress);
-  const transferringHarmony = !studio.workspace && !harmonyKeptManually && harmonyTransfer > 0 && harmonyTransfer < 1;
+  const transferringHarmony = keepingHarmony || (!harmonyKeptManually && harmonyTransfer > 0 && harmonyTransfer < 1);
   const [showParts, setShowParts] = useState(false);
   const [credits, setCredits] = useState(false);
   const creditsRef = useRef<HTMLDialogElement>(null);
   const harmonyKept = studio.layers.some((layer) => layer.id === 'harmony');
   const showRight = studio.workspace || chapter >= 3;
-  useStoryMotion({ scene: sceneRef, progress, workspace: studio.workspace, layerCount: studio.layers.length, harmonyKeptManually });
+  useStoryMotion({ scene: sceneRef, progress, workspace: studio.workspace, layerCount: studio.layers.length, harmonyKeptManually, keepingHarmony, finishKeepingHarmony });
   const copy = chapters[chapter];
   const nextStop = STORY_STOPS.find((stop) => stop > progress + .001) ?? 1;
   const nextLabel = chapter === 2 && nextStop <= .50 ? nextStop === .40 ? 'Hear the keys' : 'Bring in rhythm' : copy.next;
@@ -47,7 +46,7 @@ export function ListeningRoom() {
 
   useLayoutEffect(() => {
     if (studio.workspace) return;
-    setFlight(null);
+    setKeepingHarmony(false);
     keptFocus.current = null;
     setHarmonyKeptManually(false);
     applyTourScene(mixChapter, buildStage);
@@ -61,22 +60,19 @@ export function ListeningRoom() {
 
   useEffect(() => {
     const pending = keptFocus.current;
-    if (flight || !pending || !studio.layers.some((layer) => layer.id === pending.id)) return;
+    if (keepingHarmony || !pending || !studio.layers.some((layer) => layer.id === pending.id)) return;
     keptFocus.current = null;
     // Follow the kept layer unless the user has already moved focus elsewhere.
     if (document.activeElement === document.body || document.activeElement === pending.source) {
       sceneRef.current?.querySelector<HTMLButtonElement>(`[data-layer-id="${pending.id}"] .layer-toggle`)?.focus({ preventScroll: true });
     }
-  }, [flight, studio.layers]);
+  }, [keepingHarmony, studio.layers]);
 
   function keepLayer() {
-    if (!studio.candidate || studio.locked || studio.busy || flight) return;
+    if (!studio.candidate || studio.locked || studio.busy || transferringHarmony) return;
     keptFocus.current = { id: studio.candidate.id, source: document.activeElement };
-    const source = sceneRef.current?.querySelector('.deck-right .record-label')?.getBoundingClientRect();
-    if (source && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setFlight({ layer: studio.candidate, from: { x: source.left + source.width / 2, y: source.top + source.height / 2 } });
-    }
-    if (!studio.workspace && studio.candidate.id === 'harmony') setHarmonyKeptManually(true);
+    setHarmonyKeptManually(true);
+    setKeepingHarmony(!matchMedia('(prefers-reduced-motion: reduce)').matches);
     studio.keepCandidate();
   }
 
@@ -98,7 +94,7 @@ export function ListeningRoom() {
 
     <main className={`story ${studio.workspace ? 'workspace' : ''}`} ref={storyRef}>
       {!studio.workspace && STORY_STOPS.map((stop) => <div key={stop} className="story-anchor" data-story-stop={stop} aria-hidden="true" style={{ top: `calc((100% - 100svh) * ${stop})` }} />)}
-      <div ref={sceneRef} className={`scene ${studio.workspace ? '' : 'motion-tour'} ${flight ? 'flight-active' : ''} chapter-${chapter} ${showRight ? 'two-decks' : 'one-deck'} ${studio.workspace ? 'workspace-scene' : ''}`}>
+      <div ref={sceneRef} className={`scene motion-tour chapter-${chapter} ${showRight ? 'two-decks' : 'one-deck'}`}>
         <div className="scene-copy">
           <div className="mobile-step">{studio.workspace ? 'Your session' : `${chapter + 1} of 5 / ${copy.label}`}</div>
           <h1>{copy.title}</h1>
@@ -110,14 +106,14 @@ export function ListeningRoom() {
             {!studio.workspace && <div className="console-shell" aria-hidden="true" />}
             <div className="song-side">
               <Deck side="left" studio={studio} chapter={chapter} showParts={showParts} />
-              <div className="song-layers"><h2>Layers in your song</h2><LayerStrip studio={studio} chapter={chapter} advanced={false} arrivingId={flight?.layer.id} pendingLayer={!studio.workspace && !harmonyKept ? harmonyLayer : undefined} /></div>
+              <div className="song-layers"><h2>Layers in your song</h2><LayerStrip studio={studio} advanced={false} pendingLayer={!harmonyKept ? harmonyLayer : undefined} /></div>
             </div>
             <>
               <div className="deck-separator" aria-hidden="true"><span>+</span></div>
               <div className="new-side">
                 <Deck side="right" studio={studio} chapter={chapter} />
                 {chapter === 3 && !studio.workspace && <div className="candidate-slot">
-                  {transferringHarmony ? <p role="status">Harmony is moving into your song.</p> : harmonyKept ? <p className="transfer-confirmation" role="status">Added to your song <span>Look for Harmony on the left.</span></p> : <><div className="layer-identity"><span className="layer-color harmony-color" /><span>Harmony<small>High melody / new layer</small></span></div>{studio.candidate ? <div className="candidate-decision"><button className="button button-dark" onClick={keepLayer} disabled={studio.busy || !!flight}>Keep in my song <ArrowRight size={16} /></button><button className="text-button" onClick={studio.discardDemoPreview}>Remove this layer</button></div> : <p>Listen on the record above.</p>}</>}
+                  {transferringHarmony ? <p role="status">Harmony is moving into your song.</p> : harmonyKept ? <p className="transfer-confirmation" role="status">Added to your song <span>Look for Harmony on the left.</span></p> : <><div className="layer-identity"><span className="layer-color harmony-color" /><span>Harmony<small>High melody / new layer</small></span></div>{studio.candidate ? <div className="candidate-decision"><button className="button button-dark" onClick={keepLayer} disabled={studio.busy}>Keep in my song <ArrowRight size={16} /></button><button className="text-button" onClick={studio.discardDemoPreview}>Remove this layer</button></div> : <p>Listen on the record above.</p>}</>}
                 </div>}
                 {!studio.workspace && chapter === 4 && <div className="record-entry"><button className="button button-record" disabled={studio.busy} onClick={() => enter(true)}><Mic size={18} />Record over this song <ArrowRight size={16} /></button><button className="text-button" disabled={studio.busy} onClick={() => enter(false)}>Start with an empty song</button></div>}
               </div>
@@ -137,7 +133,6 @@ export function ListeningRoom() {
       </div>
     </main>
 
-    {flight && <LayerFlight flight={flight} finish={finishFlight} />}
     {studio.error && <div className="error-toast" role="alert"><span>{studio.error}</span><button onClick={() => studio.setError('')} aria-label="Dismiss message"><X size={18} /></button></div>}
     <dialog ref={creditsRef} className="credits-modal" onClose={() => setCredits(false)} aria-labelledby="credits-title"><button className="modal-close" onClick={() => setCredits(false)} aria-label="Close sound credits"><X size={20} /></button><h2 id="credits-title">After hours</h2><p>Original composition, D major, 84 BPM.</p><p>The guitar was recorded for this project. The keys, rhythm and harmony are synthesized.</p><h3>The turntable</h3><dl><dt>Platter</dt><dd>The rotating platform beneath the record.</dd><dt>Tonearm</dt><dd>The arm that holds the cartridge and stylus.</dd><dt>Stylus</dt><dd>The needle that follows the record groove.</dd><dt>Groove</dt><dd>The path in the vinyl that carries the recorded sound.</dd></dl><p>Unfolding the instrument layers is how this app shows its mix; a real vinyl groove plays the mixed recording.</p><a className="text-button" href="https://www.audio-technica.co.jp/document/AT-LP2022/en/Content/Turntable/AT-LP2022/part-names/names-tonearm.html" target="_blank" rel="noreferrer">Turntable anatomy / Audio-Technica</a></dialog>
   </>;

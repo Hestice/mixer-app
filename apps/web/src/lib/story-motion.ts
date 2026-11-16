@@ -24,17 +24,30 @@ export function tourBuildStage(progress: number): 0 | 1 | 2 {
   return 0;
 }
 
-export function storyGeometry(progress: number, width: number, viewportHeight: number, layerCount: number, reducedMotion = false) {
+export function storyGeometry(progress: number, width: number, viewportHeight: number, layerCount: number, reducedMotion = false, heightBudget = Infinity) {
   const mobile = width < 600;
-  const short = viewportHeight <= 740;
+  const short = viewportHeight <= 780;
+  const compact = mobile && viewportHeight <= 620;
   const settle = (value: number) => reducedMotion ? Number(value >= .5) : value;
   const unfold = settle(segment(progress, .08, .25));
   const build = settle(segment(progress, .30, .50));
   const open = settle(segment(progress, .51, .67));
-  const pad = mobile ? 16 : 28;
-  const fullDisc = mobile ? short ? 104 : 142 : Math.min(215, Math.max(130, (viewportHeight - 400) * .44));
-  const introDisc = mobile ? short ? 180 : 220 : Math.min(270, Math.max(220, viewportHeight - 420));
-  const middleDisc = mobile ? short ? Math.max(104, 138 - Math.max(0, layerCount - 3) * 34) : 190 : fullDisc;
+  const pad = compact ? 10 : mobile ? 16 : 28;
+  const heading = mobile ? short ? 26 : 42 : 31;
+  const readout = mobile ? compact ? 18 : short ? 24 : 34 : 30;
+  const rowHeight = mobile ? compact ? 26 : short ? 32 : 37 : viewportHeight <= 800 ? 36 : 44;
+  const layerTitle = compact ? 20 : 24;
+  const layerGap = compact ? 6 : 14;
+  const layerHeight = layerTitle + Math.max(1, layerCount) * rowHeight;
+  const middleRows = rowHeight * lerp(1, layerCount, build);
+  const deckChrome = pad * 2 + heading;
+  const trialControls = compact ? 148 : 170;
+  const fullChrome = deckChrome + Math.max(readout + layerGap + layerHeight, trialControls);
+  const middleChrome = deckChrome + readout + (mobile ? layerGap + layerTitle + middleRows : 0);
+  const fitDisc = (preferred: number, chrome: number, min: number) => Math.max(min, Math.min(preferred, heightBudget - chrome));
+  const fullDisc = fitDisc(mobile ? short ? 104 : 142 : Math.min(215, Math.max(130, (viewportHeight - 400) * .44)), fullChrome, compact ? 80 : 94);
+  const introDisc = fitDisc(mobile ? short ? 180 : 220 : Math.min(270, Math.max(220, viewportHeight - 420)), deckChrome + readout, 128);
+  const middleDisc = mobile ? fitDisc(short ? Math.max(104, 138 - Math.max(0, layerCount - 3) * 34) : 190, middleChrome, 100) : fullDisc;
   const disc = lerp(lerp(introDisc, middleDisc, unfold), fullDisc, open);
   const introWidth = Math.min(width, 390);
   const middleWidth = Math.min(width, 680);
@@ -45,23 +58,18 @@ export function storyGeometry(progress: number, width: number, viewportHeight: n
   const songWidth = lerp(lerp(introWidth - pad * 2, middleSongWidth, unfold), slot, open);
   const songX = lerp(lerp((width - introWidth) / 2 + pad, (width - middleWidth) / 2 + pad, unfold), pad, open);
   const songY = pad;
-  const heading = mobile ? short ? 26 : 42 : 31;
-  const readout = mobile ? short ? 24 : 34 : 30;
-  const rowHeight = mobile ? short ? 32 : 37 : viewportHeight <= 800 ? 36 : 44;
-  const layerTitle = 24;
-  const layerHeight = layerTitle + Math.max(1, layerCount) * rowHeight;
   const middleLayerWidth = mobile ? middleWidth - pad * 2 : middleWidth - middleDisc - pad * 2 - 32;
   const middleLayerX = mobile ? pad : (width - middleWidth) / 2 + pad + middleDisc + 32;
-  const middleLayerY = mobile ? pad + heading + middleDisc + readout + 14 : pad + heading + middleDisc / 2 - lerp(rowHeight / 2, rowHeight * layerCount / 2, build) - layerTitle;
-  const fullLayerY = pad + heading + fullDisc + readout + 14;
+  const middleLayerY = mobile ? pad + heading + middleDisc + readout + layerGap : Math.max(pad, pad + heading + (middleDisc - middleRows) / 2 - layerTitle);
+  const fullLayerY = pad + heading + fullDisc + readout + layerGap;
   const layersX = lerp(middleLayerX, pad, open);
   const layersY = lerp(middleLayerY, fullLayerY, open);
   const layersWidth = lerp(middleLayerWidth, slot, open);
-  const introHeight = pad * 2 + heading + introDisc + readout;
-  const middleHeight = mobile ? middleLayerY + layerTitle + rowHeight * lerp(1, layerCount, build) + pad : pad * 2 + heading + middleDisc + readout;
-  const fullHeight = Math.max(fullLayerY + layerHeight + pad, pad + heading + fullDisc + (mobile ? 170 : 170) + pad);
+  const introHeight = deckChrome + introDisc + readout;
+  const middleHeight = middleChrome + middleDisc;
+  const fullHeight = fullChrome + fullDisc;
   const height = lerp(lerp(introHeight, middleHeight, unfold), fullHeight, open);
-  return { mobile, short, unfold, build, open, disc, height, shellWidth, shellX, songX, songY, songWidth, layersX, layersY, layersWidth, rowHeight, trialX: width - pad - slot, trialY: pad, trialWidth: slot };
+  return { mobile, short, unfold, build, open, disc, height, shellWidth, shellX, songX, songY, songWidth, layersX, layersY, layersWidth, layerTitle, rowHeight, trialX: width - pad - slot, trialY: pad, trialWidth: slot };
 }
 
 // Coordinates in the tonearm SVG's 100 × 100 record space.
