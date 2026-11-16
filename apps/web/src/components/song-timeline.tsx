@@ -1,10 +1,10 @@
 'use client';
 
-import { Fragment, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useEffectEvent, useId, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import type { Studio } from '../hooks/use-studio';
 import { ClipEditor } from './clip-editor';
 import { clipBounds } from '../lib/clip-edits';
-import { Headphones, SlidersHorizontal, Volume2, VolumeX } from 'lucide-react';
+import { Headphones, Pause, Play, SlidersHorizontal, Square, Volume2, VolumeX } from 'lucide-react';
 import { LayerIconButton, LayerOptions } from './studio-layer';
 
 export function preciseTime(seconds: number) {
@@ -18,15 +18,28 @@ type TimelineProps = {
   onRetake: (id: string) => void;
   cueing: boolean;
   onToggleMix: () => void;
+  detached: boolean;
+  onStop: () => void;
   children: ReactNode;
 };
 
-export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, children }: TimelineProps) {
+export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, detached, onStop, children }: TimelineProps) {
   const [zoom, setZoom] = useState(1);
   const [openLayer, setOpenLayer] = useState<string | null>(null);
   const optionsId = useId();
   const viewport = useRef<HTMLDivElement>(null);
   const scrub = useRef<{ pointer: number; x: number; moved: boolean } | null>(null);
+  const finishScrub = useEffectEvent(() => {
+    if (!scrub.current) return;
+    scrub.current = null;
+    studio.endScrub();
+  });
+  useEffect(() => {
+    const leave = () => finishScrub();
+    window.addEventListener('pagehide', leave);
+    return () => { window.removeEventListener('pagehide', leave); leave(); };
+  }, []);
+
   const disabled = studio.locked || studio.busy;
   const rows = studio.layers.map(layer => ({ layer, draft: false }));
   if (studio.candidate) rows.push({ layer: studio.candidate, draft: true });
@@ -55,8 +68,16 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, chil
 
   return <section className="studio-song" aria-labelledby="studio-layers-title">
     <div className="timeline-toolbar">
-      <h2 id="studio-layers-title">Layers</h2>
+      <h2 id="studio-layers-title" className="studio-sr-only">Layers</h2>
       <div className="timeline-actions">
+        {detached && <>
+          <button disabled={disabled || !studio.layers.length} onClick={onToggleMix}>
+            {studio.playing ? <Pause size={13} /> : <Play size={13} />}{studio.playing ? 'Pause' : 'Play song'}
+          </button>
+          <button disabled={studio.locked || (studio.busy && !cueing) || (!studio.playing && !cueing && studio.position === 0)} onClick={onStop}>
+            <Square size={13} />Stop
+          </button>
+        </>}
         <button disabled={disabled} onClick={seekToStart}>To start</button>
         <label>Zoom<select aria-label="Timeline zoom" value={zoom} onChange={event => setZoom(Number(event.target.value))}>
           {[1, 2, 4, 8].map(value => <option key={value} value={value}>{value}×</option>)}

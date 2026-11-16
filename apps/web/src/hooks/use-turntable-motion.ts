@@ -1,5 +1,5 @@
 import { gsap } from 'gsap';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { TONEARM } from '../lib/story-motion';
 import { SECONDS_PER_TURN, vinylAngle } from '../lib/turntable-position';
 
@@ -8,7 +8,7 @@ type SongClock = { position: number; readPosition: () => number; stopVersion: nu
 export function useTurntableMotion(playing: boolean, clock?: SongClock) {
   const record = useRef<HTMLSpanElement>(null);
   const arm = useRef<SVGGElement>(null);
-  const pose = useRef({ angle: TONEARM.restAngle });
+  const pose = useRef({ angle: playing ? TONEARM.playAngle : TONEARM.restAngle });
   const resetTimeline = useRef<gsap.core.Timeline | null>(null);
   const clocked = !!clock;
   const stopVersion = clock?.stopVersion ?? 0;
@@ -17,18 +17,18 @@ export function useTurntableMotion(playing: boolean, clock?: SongClock) {
   const releaseCue = useRef<(() => void) | null>(null);
   const readPosition = clock?.readPosition;
 
-  function cuePlayback() {
+  const cuePlayback = useCallback(() => {
     return new Promise<void>(resolve => {
       releaseCue.current = resolve;
       setCueing(true);
     });
-  }
+  }, []);
 
-  function closeCue() {
+  const closeCue = useCallback(() => {
     releaseCue.current?.();
     releaseCue.current = null;
     setCueing(false);
-  }
+  }, []);
 
   useEffect(() => () => releaseCue.current?.(), []);
 
@@ -66,7 +66,7 @@ export function useTurntableMotion(playing: boolean, clock?: SongClock) {
       }
 
       const angle = gsap.utils.wrap(0, 360, Number(gsap.getProperty(disc, 'rotation')));
-      rotate(angle);
+      rotate(playing && !reset && readPosition ? vinylAngle(readPosition()) : angle);
       drawArm();
       timeline = gsap.timeline();
       let nextAngle = position.angle;
