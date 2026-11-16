@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recordingDelay, recordedPlacement } from './recording-timing';
+import { recordingDelay, recordedPlacement, recordingSchedule } from './recording-timing';
 import { playbackWindow } from './clip-edits';
 
 test('capture compensation covers the output graph, device output and reported microphone buffering', () => {
@@ -16,4 +16,13 @@ test('an overdub following the backing audio lands on the shared timeline withou
   assert.ok(Math.abs(window.offset - (1+delay))<.000001);
   assert.equal(placement.startAt,12); assert.equal(placement.trimEnd,5);
   assert.equal(recordedPlacement(.25,0,1).trimStart,.2,'short takes cannot produce an invalid trim');
+});
+
+test('count-in adds four beats while immediate capture starts on the first scheduled beat', () => {
+  const counted = recordingSchedule(0, 120, true);
+  assert.equal(counted.beatSeconds, .5);
+  assert.equal(counted.startAt - counted.countAt, 2);
+  const immediate = recordingSchedule(0, 120, false);
+  assert.equal(immediate.countAt, counted.countAt);
+  assert.equal(immediate.startAt, immediate.countAt);
 });

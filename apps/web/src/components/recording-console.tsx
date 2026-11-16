@@ -69,7 +69,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
   const span = Math.max(16, duration + 4, studio.candidate ? clipBounds(studio.candidate).end + 4 : 0, recording ? studio.recordFrom + studio.elapsed + 4 : 0);
   const meter = Math.min(100, studio.inputLevel * 100);
   const beat = studio.beatIndex % 4;
-  const action = { idle: 'Connect microphone', requesting: 'Connecting microphone…', ready: 'Record layer', countdown: 'Cancel count-in', recording: 'Stop recording', processing: 'Preparing take…', review: studio.retakeLayerId ? 'Use this take' : 'Keep this layer' }[state];
+  const action = { idle: 'Connect microphone', requesting: 'Connecting microphone…', ready: 'Record layer', countdown: studio.countdown ? 'Cancel count-in' : 'Cancel', recording: 'Stop recording', processing: 'Preparing take…', review: studio.retakeLayerId ? 'Use this take' : 'Keep this layer' }[state];
 
   useLayoutEffect(() => { if (studio.songId) rememberArtwork(studio.songId, studio.artwork); }, [rememberArtwork, studio.songId, studio.artwork]);
   useLayoutEffect(() => {
@@ -87,7 +87,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
     if (recording) {
       setCaptureOptions(true);
       void studio.stopRecording();
-    } else if (state === 'countdown') studio.cancelSetup();
+    } else if (state === 'countdown') studio.cancelCountIn();
     else if (state === 'ready') void studio.record();
     else if (review) {
       setCaptureOptions(null);
@@ -176,6 +176,17 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
                 {recording ? <Square size={16} fill="currentColor" /> : review ? <Check size={16} /> : state === 'countdown' ? <X size={16} /> : <Mic size={16} />}
                 {action}
               </button>
+              {setup && <div className="studio-capture-preferences">
+                <label className="studio-check" title="Four beats before recording">
+                  <input type="checkbox" checked={studio.countIn} disabled={studio.busy} onChange={event => studio.setCountIn(event.target.checked)} />
+                  Count-in
+                </label>
+                <label className="studio-check" title="Keep the edge pulse visible while recording">
+                  <input type="checkbox" checked={studio.metronomeMode !== 'off'} disabled={studio.busy}
+                    onChange={event => studio.setMetronomeMode(event.target.checked ? 'visual' : 'off')} />
+                  Beat during take
+                </label>
+              </div>}
             </div>
             <div className="studio-capture-drawer" data-expanded={captureOptionsOpen}>
               <div className="studio-capture-options" id="studio-capture-options" inert={!captureOptionsOpen}
@@ -185,7 +196,7 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
                 <datalist id="part-suggestions"><option value="Guitar" /><option value="Vocals" /><option value="Harmony" /><option value="Percussion" /></datalist>
                 {!review && <>
                   <details className="studio-rhythm"><summary><span>Timing &amp; metronome</span><small>{studio.tempo} BPM · {studio.metronomeMode === 'off' ? 'Beat off' : studio.metronomeMode === 'visual' ? 'Silent beat' : 'Headphone click'}{studio.countIn ? ' · Count-in on' : ''}</small></summary><fieldset className="studio-timing" disabled={studio.locked || studio.busy}><legend>Find your rhythm</legend>
-                    <div className="studio-tempo"><label>Tempo<input type="number" min="40" max="240" step="1" value={studio.tempo} onChange={(event) => studio.setTempo(event.target.valueAsNumber)} /><span>BPM</span></label><label className="studio-check"><input type="checkbox" checked={studio.countIn} onChange={(event) => studio.setCountIn(event.target.checked)} />4-beat count-in</label></div>
+                    <div className="studio-tempo"><label>Tempo<input type="number" min="40" max="240" step="1" value={studio.tempo} onChange={(event) => studio.setTempo(event.target.valueAsNumber)} /><span>BPM</span></label></div>
                     <label className="studio-field">Metronome<select aria-label="Metronome" value={studio.metronomeMode} onChange={(event) => studio.setMetronomeMode(event.target.value as 'off' | 'visual' | 'sound')}><option value="off">Off</option><option value="visual">Visual beat · silent</option><option value="sound" disabled={!studio.headphones}>Sound + visual · headphones</option></select></label>
                     <label className="studio-check studio-headphones"><input type="checkbox" checked={studio.headphones} onChange={(event) => studio.setHeadphones(event.target.checked)} /><Headphones size={15} />I’m using headphones</label>
                     <p className="studio-help">{studio.headphones ? 'Keep headphone volume low. Wired headphones are best for recording in time.' : 'Use headphones to enable clicks. Speakers can put the click and song back into your microphone.'}</p>
@@ -199,7 +210,8 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
                 {review && studio.candidate && <div className="studio-take"><div><strong>{studio.candidate.name}</strong><time>{timeLabel(studio.candidate.duration ?? 0)}</time></div><TakePicker layer={studio.candidate} studio={studio} draft /><p className="studio-help">Move or trim this take on the song timeline to compare it with your other layers.</p><span>{studio.candidate.peaks?.every((peak) => peak === 0) ? 'No sound detected. Check your microphone and try again.' : studio.retakeLayerId ? 'Your current layer stays until you use this take' : 'Not added to your song yet'}</span><div className="studio-review-buttons"><button className="button button-light" disabled={studio.busy} onClick={() => void studio.reviewTake(true)}><Play size={14} />Hear take</button><button className="button button-light" disabled={studio.busy || !studio.layers.length} onClick={() => void studio.reviewTake(false)}><Play size={14} />With song</button>{studio.playing && <button className="text-button" onClick={() => void studio.togglePlayback()}><Pause size={14} />Pause</button>}</div></div>}
                 {(state === 'requesting' || state === 'processing') && <p className="studio-help" role="status">{state === 'requesting' ? 'Allow microphone access in your browser.' : 'Preparing the waveform and your WAV recording.'}</p>}
                 {review && <div className="studio-take-actions"><button className="text-button" disabled={studio.busy} onClick={() => studio.recordAnother()}><RotateCcw size={14} />Record another take</button><button className="text-button" onClick={() => studio.download(studio.candidate!)}><Download size={14} />Download original WAV</button></div>}
-                {state === 'ready' && <button className="text-button studio-disconnect" onClick={studio.cancelSetup}>{studio.candidate ? 'Back to previous take' : 'Disconnect microphone'}</button>}
+                {state === 'ready' && studio.candidate && <button className="text-button studio-disconnect" onClick={studio.returnToTake}>Back to previous take</button>}
+                {(state === 'ready' || review) && studio.microphoneConnected && <button className="text-button studio-disconnect" disabled={studio.busy} onClick={studio.disconnectMicrophone}>Disconnect microphone</button>}
                 {state === 'ready' && studio.candidate && <p className="studio-help">Your earlier takes stay saved. Recording again adds another choice.</p>}
                 <p className="studio-capture-footnote">{review ? 'Every attempt and edit saves automatically. Switch takes to compare; keep the one you like.' : 'Only your microphone is recorded. The click is a listening guide.'}</p>
               </div>
@@ -208,6 +220,12 @@ export function RecordingConsole({ studio }: { studio: Studio }) {
         </div>
       </div>
     </main>
+    <div className="studio-count-in-overlay" data-active={state === 'countdown' && studio.countdown > 0} aria-hidden="true">
+      <div className="studio-count-in-display">
+        <span className="studio-count-in-number" key={studio.countdown}>{studio.countdown || ''}</span>
+        <span>Count-in</span>
+      </div>
+    </div>
     {studio.beatIndex >= 0 && <div key={studio.beatIndex} className="studio-beat-pulse" aria-hidden="true"
       data-downbeat={beat === 0} data-side={beat % 2 === 0 ? 'left' : 'right'} />}
     {studio.error && <div className="error-toast" role="alert"><span>{studio.error}</span><button onClick={() => studio.setError('')} aria-label="Dismiss message"><X size={18} /></button></div>}

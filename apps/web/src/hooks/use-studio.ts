@@ -7,7 +7,7 @@ import type { ClipEdits } from '../lib/session';
 import { RecordingReadError, readRecording, recordingBlob, recordingCopies, replaceLayerAudio } from '../lib/recording-storage';
 import type { RecordArt } from '../lib/record-art';
 import { OUTPUT_DELAY } from '../lib/audio-output';
-import { recordingDelay, recordedPlacement } from '../lib/recording-timing';
+import { recordingDelay, recordedPlacement, recordingSchedule } from '../lib/recording-timing';
 import { AudioEngine } from '../lib/audio-engine';
 import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
@@ -75,7 +75,7 @@ export function useStudio(startInWorkspace = false) {
   const [beatIndex, setBeatIndex] = useState(-1);
   const [metronomePreview, setMetronomePreview] = useState(false);
   const [livePeaks, setLivePeaks] = useState<number[]>([]);
-  const [microphoneLabel, setMicrophoneLabel] = useState('Microphone not connected');
+  const [microphoneLabel, setMicrophoneLabel] = useState<string | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [inputDevice, setInputDevice] = useState('');
   const recorderRef = useRef<MicrophoneRecorder | null>(null);
@@ -150,8 +150,8 @@ export function useStudio(startInWorkspace = false) {
 
   useEffect(() => {
     if (!accountBlocked) return;
-    if (recordingState === 'recording') void stopRecording();
-    else cancelSetup();
+    if (recordingState === 'recording') void stopRecording(true);
+    else disconnectMicrophone();
   }, [accountBlocked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function persistSong(snapshot = contentRef.current) {
@@ -398,9 +398,9 @@ export function useStudio(startInWorkspace = false) {
     if (locked || busy) return;
     const previous = editHistory.current.pop();
     if (!previous) return;
-    getEngine().pause(); setPlaying(false); releaseMicrophone();
+    getEngine().pause(); setPlaying(false);
     setLayers(previous.layers); setCandidate(previous.candidate); setRetakeLayerId(previous.retakeLayerId);
-    setRecordingState(previous.candidate ? 'review' : 'idle'); setPreviewCandidate(false); setSoloId(null);
+    setRecordingState(previous.candidate ? 'review' : recorderRef.current ? 'ready' : 'idle'); setPreviewCandidate(false); setSoloId(null);
     decodedRecordings.current.clear(); setUndoCount(editHistory.current.length);
   }
 
@@ -437,7 +437,7 @@ export function useStudio(startInWorkspace = false) {
     const next = retakeLayerId ? savedLayers.map((layer) => layer.id === retakeLayerId ? { ...candidate, id: layer.id, enabled: layer.enabled, volume: layer.volume } : layer) : commitLayer(savedLayers, candidate);
     if (workspace) { getEngine().configureSession(next.filter(layer => lifecycle(layer) === 'active'), getEngine().position); setPlaying(false); }
     setLayers(next); setCandidate(null); setRetakeLayerId(undefined); setSoloId(null); setPreviewCandidate(false);
-    setRecordingState('idle');
+    setRecordingState(recorderRef.current ? 'ready' : 'idle');
     if (workspace) {
       const count = next.filter(layer => lifecycle(layer) === 'active').length;
       setPartName(count === 1 ? 'Vocals' : `Layer ${count + 1}`);
@@ -450,7 +450,10 @@ export function useStudio(startInWorkspace = false) {
     if (!layer) return;
     if (id) { setRetakeLayerId(id); setCandidate(layer); }
     setPartName(layer.name); setPreviewCandidate(false);
-    void enableMicrophone(inputDevice, layer);
+    if (recorderRef.current) {
+      stopMetronome(); getEngine().pause(); setPlaying(false); setError('');
+      setRecordingState('ready');
+    } else void enableMicrophone(inputDevice, layer);
   }
 
   async function auditionLayer(layer: Layer, alone: boolean) {
@@ -483,24 +486,14 @@ export function useStudio(startInWorkspace = false) {
     setMetronomePreview(false); setBeatIndex(-1);
   }
 
-  function startVisualBeat(context: AudioContext, when: number, beatSeconds: number, until = Infinity) {
-    if (until <= when) return;
-    beatTimer.current = setInterval(() => {
-      const time = context.currentTime;
-      if (time >= until) {
-        if (beatTimer.current) clearInterval(beatTimer.current);
-        beatTimer.current = null;
-        setBeatIndex(-1);
-        return;
-      }
-      setBeatIndex(metronomeBeatAt(time, when, beatSeconds));
-    }, 30);
+  function startVisualBeat(context: AudioContext, when: number, beatSeconds: number) {
+    beatTimer.current = setInterval(() => setBeatIndex(metronomeBeatAt(context.currentTime, when, beatSeconds)), 30);
   }
 
   function releaseMicrophone() {
     recorderRef.current?.dispose(); recorderRef.current = null;
     levelRef.current = 0; setInputLevel(0);
-    setMicrophoneLabel('Microphone not connected');
+    setMicrophoneLabel(null);
   }
 
   async function enableMicrophone(deviceId = inputDevice, fallbackCandidate = candidate) {
@@ -520,14 +513,16 @@ export function useStudio(startInWorkspace = false) {
         ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       } });
       if (disposed.current || run !== runRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
-      const recorder = await MicrophoneRecorder.open(context, stream, (value) => {
-        if (run !== runRef.current || disposed.current) return;
+      let recorder: MicrophoneRecorder | undefined;
+      recorder = await MicrophoneRecorder.open(context, stream, (value) => {
+        if (!recorder || recorderRef.current !== recorder || disposed.current) return;
         levelRef.current = value; setInputLevel(value);
       }, (reason) => {
-        runRef.current++;
-        if (recordingTimer.current) clearInterval(recordingTimer.current);
-        stopMetronome(); releaseMicrophone(); getEngine().pause(); setPlaying(false);
-        report(reason); setRecordingState(fallbackCandidate ? 'review' : 'idle');
+        if (!recorder || recorderRef.current !== recorder || disposed.current) return;
+        cancelPendingRecording();
+        releaseMicrophone();
+        report(reason);
+        setRecordingState(contentRef.current.candidate ? 'review' : 'idle');
       });
       if (disposed.current || run !== runRef.current) { recorder.dispose(); return; }
       recorderRef.current = recorder;
@@ -535,7 +530,7 @@ export function useStudio(startInWorkspace = false) {
       setInputDevice(stream.getAudioTracks()[0]?.getSettings().deviceId || deviceId);
       setRecordingState('ready');
       void navigator.mediaDevices.enumerateDevices().then((items) => {
-        if (!disposed.current && run === runRef.current) setDevices(items.filter((item) => item.kind === 'audioinput'));
+        if (!disposed.current && recorderRef.current === recorder) setDevices(items.filter((item) => item.kind === 'audioinput'));
       }).catch(() => {});
     } catch (reason) {
       stream?.getTracks().forEach((track) => track.stop());
@@ -546,7 +541,7 @@ export function useStudio(startInWorkspace = false) {
     }
   }
 
-  async function stopRecording() {
+  async function stopRecording(disconnectAfter = false) {
     const recorder = recorderRef.current;
     if (!recorder || stoppingRef.current) return;
     stoppingRef.current = true;
@@ -554,9 +549,11 @@ export function useStudio(startInWorkspace = false) {
     const sampleRate = recorder.sampleRate;
     if (recordingTimer.current) clearInterval(recordingTimer.current);
     stopMetronome(); getEngine().pause(); setPlaying(false); setRecordingState('processing');
+    let receivedAudio = false;
     try {
       const samples = await recorder.stop();
       if (disposed.current || run !== runRef.current) return;
+      receivedAudio = true;
       if (samples.length < sampleRate * .25) throw new Error('That take was too short. Record at least a moment before stopping.');
       const id = `take-${crypto.randomUUID()}`;
       const duration = getEngine().addSamples(id, samples, sampleRate);
@@ -571,10 +568,14 @@ export function useStudio(startInWorkspace = false) {
       editHistory.current = []; setUndoCount(0);
       setCandidate(next); setPreviewCandidate(true); setSoloId(null); setRecordingState('review');
     } catch (reason) {
-      if (!disposed.current && run === runRef.current) { report(reason); setRecordingState(candidate ? 'review' : 'idle'); }
+      if (!disposed.current && run === runRef.current) {
+        if (!receivedAudio) releaseMicrophone();
+        report(reason);
+        setRecordingState(candidate ? 'review' : recorderRef.current && !disconnectAfter ? 'ready' : 'idle');
+      }
     } finally {
       stoppingRef.current = false;
-      if (!disposed.current && run === runRef.current) releaseMicrophone();
+      if (disconnectAfter && !disposed.current && run === runRef.current) releaseMicrophone();
     }
   }
 
@@ -582,7 +583,7 @@ export function useStudio(startInWorkspace = false) {
     if (recordingState !== 'ready' || !recorderRef.current || busy) return;
     const run = runRef.current;
     const recorder = recorderRef.current;
-    stopMetronome(); setError(''); setRecordingState('countdown'); setCountdown(countIn ? 4 : 0);
+    stopMetronome(); setError(''); setRecordingState('countdown'); setCountdown(0);
     setLivePeaks([]); setElapsed(0); setSoloId(null);
     try {
       const engine = getEngine();
@@ -593,20 +594,19 @@ export function useStudio(startInWorkspace = false) {
       capturePlacement.current = { position, delay: backingLayers.some(layer => layer.enabled && layer.volume > 0) || canSoundClick(metronomeMode, headphones) ? recordingDelay(context, recorder.inputLatency) : 0 };
       setRecordFrom(position);
       engine.configureSession(backingLayers, position);
-      const beatSeconds = 60 / tempo;
-      const countAt = context.currentTime + .12;
-      const startAt = countAt + (countIn ? 4 * beatSeconds : 0);
+      const { beatSeconds, countAt, startAt } = recordingSchedule(context.currentTime, tempo, countIn);
       recorder.start(startAt);
       engine.volume(volume);
       engine.playAt(backingLayers, startAt, position);
       metronomeRef.current = new Metronome(context);
       const beatAt = countAt + OUTPUT_DELAY;
       metronomeRef.current.start(beatAt, tempo, canSoundClick(metronomeMode, headphones));
-      startVisualBeat(context, beatAt, beatSeconds, metronomeMode === 'off' ? startAt : Infinity);
+      if (metronomeMode !== 'off') startVisualBeat(context, beatAt, beatSeconds);
       const update = () => {
-        const seconds = context.currentTime - startAt;
+        const time = context.currentTime;
+        const seconds = time - startAt;
         if (seconds < 0) {
-          setCountdown(countIn ? Math.min(4, Math.ceil(-seconds / beatSeconds)) : 0);
+          setCountdown(countIn && time >= countAt ? Math.min(4, Math.ceil(-seconds / beatSeconds)) : 0);
         } else {
           setRecordingState('recording'); setCountdown(0); setElapsed(seconds); setPosition(position + seconds);
           setLivePeaks((current) => [...current.slice(-63), Math.min(1, levelRef.current * 3)]);
@@ -616,17 +616,34 @@ export function useStudio(startInWorkspace = false) {
       recordingTimer.current = setInterval(update, 80);
     } catch (reason) {
       if (run === runRef.current && !disposed.current) {
-        recorder.cancel(); stopMetronome(); getEngine().pause(); releaseMicrophone();
-        report(reason); setRecordingState(candidate ? 'review' : 'idle');
+        recorder.cancel(); stopMetronome(); getEngine().pause(); setPlaying(false);
+        setCountdown(0); report(reason); setRecordingState(candidate ? 'review' : 'ready');
       }
     }
   }
 
-  function cancelSetup() {
+  function cancelPendingRecording() {
     runRef.current++;
     if (recordingTimer.current) clearInterval(recordingTimer.current);
-    stopMetronome(); releaseMicrophone(); getEngine().pause(); setPlaying(false);
-    setCountdown(0); setRecordingState(candidate ? 'review' : 'idle');
+    recordingTimer.current = null;
+    recorderRef.current?.cancel();
+    stopMetronome(); getEngine().pause(); setPlaying(false); setCountdown(0);
+  }
+
+  function cancelCountIn() {
+    cancelPendingRecording();
+    setRecordingState('ready');
+  }
+
+  function returnToTake() {
+    cancelPendingRecording();
+    setRecordingState('review');
+  }
+
+  function disconnectMicrophone() {
+    cancelPendingRecording();
+    releaseMicrophone();
+    setRecordingState(candidate ? 'review' : 'idle');
   }
 
   async function previewMetronome() {
@@ -701,8 +718,10 @@ export function useStudio(startInWorkspace = false) {
     locked, hasRecordings, previewCandidate,
     togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
     beginEdit, updateClip, chooseTake, renameLayer, manageLayer, undoEdit, canUndoEdit: undoCount > 0, recordAnother, auditionLayer,
-    enableMicrophone, record, stopRecording, cancelSetup, download, downloadSong, exportStatus, exportBusy, reviewTake,
-    partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, microphoneLabel, devices, inputDevice, previewMetronome,
+    enableMicrophone, record, stopRecording, cancelCountIn, returnToTake, disconnectMicrophone, download, downloadSong, exportStatus, exportBusy, reviewTake,
+    partName, setPartName, tempo, countIn, setCountIn, metronomeMode, headphones, beatIndex, metronomePreview, livePeaks, devices, inputDevice, previewMetronome,
+    microphoneConnected: microphoneLabel !== null,
+    microphoneLabel: microphoneLabel ?? 'Microphone not connected',
     setTempo: (value: number) => { stopMetronome(); setTempo(Math.max(40, Math.min(240, Number.isFinite(value) ? value : 84))); },
     setMetronomeMode: (mode: MetronomeMode) => { stopMetronome(); setMetronomeMode(mode); },
     setHeadphones: (value: boolean) => { stopMetronome(); setHeadphones(value); if (!value && metronomeMode === 'sound') setMetronomeMode('visual'); },

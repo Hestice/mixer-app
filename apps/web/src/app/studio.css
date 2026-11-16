@@ -150,6 +150,45 @@
 .studio-headphones { margin-top: 14px; }
 .studio-help { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 10px 0; }
 .studio-timing .text-button { font-size: 11px; }
+.studio-capture-preferences { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 16px; color: #536447; }
+.studio-capture-preferences label { white-space: nowrap; }
+.studio-count-in-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(ellipse at center, #f4f6edab, #edf0e736 64%, transparent);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .18s ease, visibility 0s .18s;
+}
+.studio-count-in-overlay[data-active=true] { opacity: 1; visibility: visible; transition-delay: 0s; }
+.studio-count-in-display {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  min-width: 132px;
+  padding: 19px 27px 20px;
+  border: 1px solid #eef2e3;
+  border-radius: 24px;
+  background: #f8f9f2ed;
+  color: #526447;
+  box-shadow: 0 12px 38px #313b2a25;
+  font-size: 12px;
+}
+.studio-count-in-number {
+  min-height: 1em;
+  color: #35432e;
+  font: 600 clamp(54px, 11vmin, 84px)/1 'Manrope', var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.studio-count-in-overlay[data-active=true] .studio-count-in-number { animation: studio-count-beat .24s var(--studio-ease) both; }
+@keyframes studio-count-beat {
+  from { opacity: .55; transform: scale(.92); }
+  to { opacity: 1; transform: scale(1); }
+}
 .studio-beat-pulse {
   --beat-color: #659151;
   position: fixed;
@@ -250,7 +289,7 @@
 @media (560px <= width <= 760px) and (max-height: 430px) {
   .studio-playback { grid-template-columns: minmax(0, 1fr) minmax(110px, 38%); }
 }
-@media(pointer:coarse) { .studio-app button { min-height: 44px; }.studio-app input:not([type=checkbox]):not([type=range]),.studio-app select { font-size: 16px; }.studio-check { min-height: 44px; }.studio-track-controls { gap: 8px; } }
+@media(pointer:coarse) { .studio-app button { min-height: 44px; }.studio-app input:not([type=checkbox]):not([type=range]),.studio-app select { font-size: 16px; }.studio-check { min-height: 44px; }.studio-capture-preferences .studio-check { min-height: 32px; }.studio-track-controls { gap: 8px; } }
 @media(prefers-reduced-motion:reduce) { .studio-track { animation: none; }.studio-input-meter i { transition: none; } }
 
 .studio-rhythm { margin-top: 24px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
