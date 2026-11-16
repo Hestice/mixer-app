@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { lifecycle, lifecycleEdit, type LifecycleAction } from '../lib/library-entry';
+import { lifecycle, layerLifecycleEdit, type LifecycleAction } from '../lib/library-entry';
 import { appendTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
-import type { ClipEdits } from '../lib/session';
+import type { ClipEdits, LayerColor } from '../lib/session';
 import { RecordingReadError, readRecording, recordingBlob, recordingCopies, replaceLayerAudio } from '../lib/recording-storage';
 import type { RecordArt } from '../lib/record-art';
 import { OUTPUT_DELAY } from '../lib/audio-output';
@@ -437,7 +437,7 @@ export function useStudio(startInWorkspace = false) {
     const layer = savedLayers.find(item => item.id === id);
     if (!layer) return;
     try {
-      const patch = lifecycleEdit(layer, action);
+      const patch = layerLifecycleEdit(layer, action);
       const next = savedLayers.map(item => item.id === id ? { ...item, ...patch } : item);
       setLayers(next);
       // A trim or take undo must not resurrect an archived/deleted layer.
@@ -454,7 +454,7 @@ export function useStudio(startInWorkspace = false) {
   function keepCandidate() {
     if (!candidate || locked || busy) return;
     if (workspace) beginEdit();
-    const next = retakeLayerId ? savedLayers.map((layer) => layer.id === retakeLayerId ? { ...candidate, id: layer.id, enabled: layer.enabled, volume: layer.volume } : layer) : commitLayer(savedLayers, candidate);
+    const next = retakeLayerId ? savedLayers.map((layer) => layer.id === retakeLayerId ? { ...candidate, id: layer.id, enabled: layer.enabled, volume: layer.volume, color: layer.color } : layer) : commitLayer(savedLayers, candidate);
     if (workspace) { getEngine().configureSession(next.filter(layer => lifecycle(layer) === 'active'), getEngine().position); setPlaying(false); }
     setLayers(next); setCandidate(null); setRetakeLayerId(undefined); setSoloId(null); setPreviewCandidate(false);
     setRecordingState(recorderRef.current ? 'ready' : 'idle');
@@ -734,6 +734,9 @@ export function useStudio(startInWorkspace = false) {
     changeInput: (id: string) => { setInputDevice(id); void enableMicrophone(id); },
     setPreviewCandidate, setError,
     setSoloId: (id: string | null) => { if (!locked) setSoloId(id); },
+    setLayerColor: (id: string, color: LayerColor) => {
+      if (!locked && !busy) setLayers(current => current.map(layer => layer.id === id && layer.color !== color ? { ...layer, color } : layer));
+    },
     setLayerVolume: (id: string, value: number) => setLayers((current) => current.map((layer) => layer.id === id ? { ...layer, volume: value } : layer)),
     setVolume: (value: number) => { setVolumeState(value); getEngine().volume(value); },
   };

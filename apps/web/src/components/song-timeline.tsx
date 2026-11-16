@@ -71,7 +71,7 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, chil
           const expanded = !draft && openLayer === layer.id;
 
           return <Fragment key={`${layer.id}-${draft}`}>
-            <div className={`timeline-row ${draft ? 'timeline-draft' : ''} ${audible ? '' : 'timeline-muted'}`}>
+            <div className={`timeline-row ${draft ? 'timeline-draft' : ''} ${audible ? '' : 'timeline-muted'}`} data-layer-color={layer.color}>
               <div className="timeline-label">
                 <span title={layer.name}>{layer.name}</span>
                 <small>{draft ? 'Take to review' : `${preciseTime(bounds.startAt)} → ${preciseTime(bounds.end)}`}</small>

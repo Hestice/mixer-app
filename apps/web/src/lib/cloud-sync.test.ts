@@ -241,19 +241,22 @@ test('cloud-only restore and delete keep audio and mirror lifecycle onto a cache
   assert.equal(f.audio.size, 1);
 });
 
-test('archived and deleted layers round-trip through a cloud manifest with their takes and timing', async () => {
+test('archived and directly deleted layers retain takes, timing and color in cloud backup', async () => {
   const f = await fixture(), now = Date.now();
   const first = editClip(f.song.candidate!, { trimStart: .1, startAt: 3 });
   const alternate = appendTake(first, { id: 'replacement', duration: 2, blob: encodeWav(new Float32Array([.3, .4]), 44100) });
   await saveSong(f.id, 1, { ...f.song, layers: [
-    { ...alternate, archivedAt: now },
-    { ...first, id: 'deleted', archivedAt: now, deletedAt: now },
+    { ...alternate, archivedAt: now, color: 'clay' },
+    { ...first, id: 'deleted', deletedAt: now, color: 'teal' },
   ], candidate: null });
   await syncSong(f.id, f.owner, f.remote);
   const restored = await downloadManifest(f.songs.get(f.id)!.content, f.owner, f.remote.download);
   assert.equal(restored.layers[0].archivedAt, now);
   assert.equal(restored.layers[0].takes?.length, 2);
   assert.equal(selectTake(restored.layers[0], first.id).startAt, 3);
+  assert.equal(restored.layers[0].color, 'clay');
+  assert.equal(restored.layers[1].color, 'teal');
+  assert.equal(restored.layers[1].archivedAt, undefined);
   assert.equal(restored.layers[1].deletedAt, now);
   assert.deepEqual(await restored.layers[1].blob!.arrayBuffer(), await first.blob!.arrayBuffer());
 });

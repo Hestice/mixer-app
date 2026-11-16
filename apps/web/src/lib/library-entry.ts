@@ -18,6 +18,12 @@ export function lifecycleEdit(entry: Lifecycle, action: LifecycleAction, now = D
   throw new Error('This item changed. Reopen the list and try again.');
 }
 
+export function layerLifecycleEdit(entry: Lifecycle, action: LifecycleAction, now = Date.now()): Lifecycle {
+  if (action === 'delete' && lifecycle(entry) === 'active') return { deletedAt: now };
+  if (action === 'archive') throw new Error('Layers can be deleted from the song.');
+  return lifecycleEdit(entry, action, now);
+}
+
 export type LibraryPatch = Lifecycle & { title?: string };
 
 export function libraryEdit(entry: Lifecycle, action: LibraryAction): LibraryPatch {

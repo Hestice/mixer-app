@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } fr
 import type { Studio } from '../hooks/use-studio';
 import type { ClipEdits, Layer } from '../lib/session';
 import { clipBounds, MAX_START, MIN_CLIP, snapStart, takesOf } from '../lib/clip-edits';
-import { ChevronDown, Scissors } from 'lucide-react';
 import { Waveform } from './waveform';
 import { TimelineWaveform } from './timeline-waveform';
 
@@ -81,8 +80,7 @@ export function ClipEditor({ layer, studio, span, draft = false, timelineOnly = 
       </button>
       {(['in', 'out'] as const).map((kind) => <button key={kind} className={`timeline-trim timeline-trim-${kind}`} disabled={disabled} aria-label={`${layer.name}${draft ? ' review' : ''} trim ${kind === 'in' ? 'beginning' : 'ending'} in song`} style={{ left: `${(kind === 'in' ? clip.startAt : clip.end) / span * 100}%` }} onPointerDown={(event) => start(event, kind)} onKeyDown={(event) => keyboard(event, kind === 'in' ? 'trimStart' : 'trimEnd')} {...pointer} />)}
       <span className="studio-playhead" style={{ left: `${Math.min(100, studio.position / span * 100)}%` }} aria-hidden="true" />
-    </div> : <details className="clip-details">
-      <summary><Scissors size={14} aria-hidden="true" />Trim &amp; timing<ChevronDown className="clip-details-chevron" size={13} aria-hidden="true" /></summary>
+    </div> : <>
       <p className="studio-help">Drag the edges to choose your part. Your full recording stays saved.</p>
       <div ref={trimLane} className="trim-lane">
         <Waveform peaks={layer.peaks} />
@@ -98,6 +96,6 @@ export function ClipEditor({ layer, studio, span, draft = false, timelineOnly = 
         <ClipNumber label="Enter at" name={`${layer.name} start in song seconds`} value={clip.startAt} min={0} max={MAX_START} step={.1} disabled={disabled} onValue={(value) => numberEdit('startAt', value)} />
       </div>
       <button className="text-button clip-reset" disabled={disabled || (clip.trimStart === 0 && clip.trimEnd === clip.duration)} onClick={() => { studio.beginEdit(); studio.updateClip(layer.id, { trimStart: 0, trimEnd: clip.duration }, draft); }}>Use full recording</button>
-    </details>}
+    </>}
   </div>;
 }

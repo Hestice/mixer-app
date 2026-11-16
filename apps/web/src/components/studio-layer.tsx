@@ -1,7 +1,8 @@
-import type { ComponentPropsWithoutRef } from 'react';
-import { Download, LoaderCircle, Mic, Pause, Play, Volume2 } from 'lucide-react';
+import { useId, useState, type ComponentPropsWithoutRef } from 'react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Check, ChevronDown, Download, LoaderCircle, Mic, Pause, Play, Scissors, Volume2 } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
-import type { Layer } from '../lib/session';
+import { layerColors, type Layer, type LayerColor } from '../lib/session';
 import { ClipEditor, TakePicker } from './clip-editor';
 import { LibraryActions } from './library-actions';
 
@@ -26,18 +27,48 @@ export function LayerOptions({ id, layer, studio, span, onRetake, cueing, onTogg
   onToggleMix: () => void;
 }) {
   const disabled = studio.locked || studio.busy;
+  const [trimOpen, setTrimOpen] = useState(false);
+  const trimId = useId();
+  const color = layer.color ?? 'moss';
   const playbackLabel = studio.playing ? 'Pause mix' : cueing ? 'Cueing mix…' : 'Play mix from cursor';
   const PlaybackIcon = studio.playing ? Pause : cueing ? LoaderCircle : Play;
-  return <div className="studio-layer-options" id={id} role="region" aria-label={`${layer.name} options`}>
+  return <div className="studio-layer-options" id={id} role="region" aria-label={`${layer.name} options`} data-layer-color={layer.color}>
     <div className="studio-layer-settings">
       <TakePicker layer={layer} studio={studio} />
-      <label className="studio-layer-volume" title="Layer volume">
-        <Volume2 size={16} aria-hidden="true" />
-        <input aria-label={`${layer.name} volume`} aria-valuetext={`${Math.round(layer.volume * 100)}%`}
-          type="range" min="0" max="1" step=".01" disabled={studio.locked} value={layer.volume}
-          onChange={event => studio.setLayerVolume(layer.id, Number(event.target.value))} />
-      </label>
+      <div className="studio-layer-adjustments">
+        <label className="studio-layer-volume" title="Layer volume">
+          <Volume2 size={16} aria-hidden="true" />
+          <input aria-label={`${layer.name} volume`} aria-valuetext={`${Math.round(layer.volume * 100)}%`}
+            type="range" min="0" max="1" step=".01" disabled={studio.locked} value={layer.volume}
+            onChange={event => studio.setLayerVolume(layer.id, Number(event.target.value))} />
+        </label>
+        <button className="studio-layer-trim" type="button" aria-expanded={trimOpen} aria-controls={trimId}
+          onClick={() => setTrimOpen(open => !open)}>
+          <Scissors size={14} aria-hidden="true" />Trim &amp; timing
+          <ChevronDown className="clip-details-chevron" size={13} aria-hidden="true" />
+        </button>
+      </div>
       <div className="studio-layer-tools">
+        <DropdownMenu.Root modal={false}>
+          <DropdownMenu.Trigger asChild>
+            <LayerIconButton label={`${layer.name} color`} hint="Layer color" disabled={disabled}>
+              <span className="studio-layer-swatch" data-layer-color={color} aria-hidden="true" />
+            </LayerIconButton>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content className="library-menu" align="end" sideOffset={5} collisionPadding={12} aria-label="Layer color">
+              <DropdownMenu.RadioGroup value={color} onValueChange={value => studio.setLayerColor(layer.id, value as LayerColor)}>
+                {Object.entries(layerColors).map(([value, label]) =>
+                  <DropdownMenu.RadioItem className="library-menu-item" key={value} value={value}>
+                    <span className="studio-layer-swatch" data-layer-color={value} aria-hidden="true" />
+                    {label}
+                    <DropdownMenu.ItemIndicator className="studio-layer-color-check"><Check aria-hidden="true" /></DropdownMenu.ItemIndicator>
+                  </DropdownMenu.RadioItem>
+                )}
+              </DropdownMenu.RadioGroup>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
         <LayerIconButton label={playbackLabel} hint={playbackLabel} disabled={disabled} onClick={onToggleMix}>
           <PlaybackIcon aria-hidden="true" />
         </LayerIconButton>
@@ -53,6 +84,8 @@ export function LayerOptions({ id, layer, studio, span, onRetake, cueing, onTogg
         <LayerActions layer={layer} studio={studio} />
       </div>
     </div>
-    <ClipEditor layer={layer} studio={studio} span={span} />
+    <div className="clip-details" id={trimId} hidden={!trimOpen}>
+      {trimOpen && <ClipEditor layer={layer} studio={studio} span={span} />}
+    </div>
   </div>;
 }
