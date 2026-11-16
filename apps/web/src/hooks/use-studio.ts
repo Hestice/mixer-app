@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { appendTake, editClip, selectTake, takesOf } from '../lib/clip-edits';
 import type { ClipEdits } from '../lib/session';
-import { RecordingReadError, readRecording, replaceLayerAudio } from '../lib/recording-storage';
+import { RecordingReadError, readRecording, recordingBlob, recordingCopies, replaceLayerAudio } from '../lib/recording-storage';
 import type { RecordArt } from '../lib/record-art';
 import { OUTPUT_DELAY } from '../lib/audio-output';
 import { recordingDelay, recordedPlacement } from '../lib/recording-timing';
@@ -11,11 +11,11 @@ import { AudioEngine } from '../lib/audio-engine';
 import { commitLayer, demoLayers, harmonyLayer, tourScene, type Layer } from '../lib/session';
 import { MicrophoneRecorder } from '../lib/microphone-recorder';
 import { Metronome, canSoundClick, type MetronomeMode } from '../lib/metronome';
-import { encodeWav } from '../lib/wav';
+import { encodeWavBytes } from '../lib/wav';
 import { exportSong, songFilename } from '../lib/song-export';
 import { useCloud } from '../components/cloud-provider';
 import { getBackupPreference } from '../lib/backup-store';
-import { getSong, SongWriter, storageMessage, type SongContent } from '../lib/song-store';
+import { getSong, openLocalSong, SongWriter, storageMessage, type SongContent } from '../lib/song-store';
 
 export type RecordingState = 'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'processing' | 'review';
 
@@ -47,6 +47,7 @@ export function useStudio(startInWorkspace = false) {
   const [localReady, setLocalReady] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
+  const [audioError, setAudioError] = useState('');
   const [savedContent, setSavedContent] = useState<SongContent | null>(null);
   const writerRef = useRef<SongWriter | null>(null);
   const saveVersion = useRef(0);
@@ -119,10 +120,12 @@ export function useStudio(startInWorkspace = false) {
         setLocalReady(true);
       })();
     } else {
-      void getSong(id).then((song) => {
+      void openLocalSong(id, cloud.user?.id).then(({ song, audioError, protectionError, ownerMismatch }) => {
         if (canceled) return;
+        if (ownerMismatch) { setLoadError('Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.'); return; }
         if (!song) { setLoadError('This song is not on this browser. It may have been saved on another device, or its browser data was cleared.'); return; }
-        if (song.ownerId && song.ownerId !== cloud.user?.id) { setLoadError('Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.'); return; }
+        setAudioError(audioError?.message ?? '');
+        if (protectionError) setSaveError(storageMessage(protectionError));
         setLoadError(''); setSongId(id); setOwnerId(song.ownerId); setLocalRevision(song.revision);
         writerRef.current = new SongWriter(id, song.revision);
         setArtwork(song.artwork); setTitle(song.title); setLayers(song.layers); setCandidate(song.candidate); setRetakeLayerId(song.retakeLayerId);
@@ -152,7 +155,7 @@ export function useStudio(startInWorkspace = false) {
     try {
       const saved = await writerRef.current.write(snapshot);
       if (!disposed.current) setLocalRevision(saved.revision);
-      if (!disposed.current && version === saveVersion.current) { persistedContent.current = snapshot; setSavedContent(snapshot); }
+      if (!disposed.current && version === saveVersion.current) { persistedContent.current = snapshot; setSavedContent(snapshot); setAudioError(''); }
       return true;
     } catch (reason) {
       if (!disposed.current && version === saveVersion.current) setSaveError(storageMessage(reason));
@@ -194,10 +197,10 @@ export function useStudio(startInWorkspace = false) {
           const replacements = new Map<string, Blob>();
           // A fresh database read can refresh a stale browser Blob handle.
           const fresh = await getSong(songId).catch(() => undefined);
-          const freshLayer = [...(fresh?.layers ?? []), ...(fresh?.candidate ? [fresh.candidate] : [])].find(item => item.id === layer.id);
-          const freshTake = freshLayer && takesOf(freshLayer).find(take => take.id === selectedId);
-          if (freshTake?.blob) {
-            try { replacements.set(selectedId, new Blob([await readRecording(freshTake.blob, layer.name)], { type: freshTake.blob.type })); } catch {}
+          const freshLayers = [...(fresh?.layers ?? []), ...(fresh?.candidate ? [fresh.candidate] : [])].filter(item => item.id === layer.id);
+          const copies = new Set([...recordingCopies(layer, selectedId), ...freshLayers.flatMap(item => recordingCopies(item, selectedId))]);
+          for (const blob of copies) {
+            try { replacements.set(selectedId, recordingBlob(await readRecording(blob, layer.name), blob.type)); break; } catch {}
           }
           if (!replacements.has(selectedId)) {
             try { for (const [id, blob] of await cloud.recoverRecordings(songId, layer)) replacements.set(id, blob); } catch {}
@@ -485,7 +488,7 @@ export function useStudio(startInWorkspace = false) {
       const duration = getEngine().addSamples(id, samples, sampleRate);
       decodedRecordings.current.set(id, id);
       const placement = recordedPlacement(duration, capturePlacement.current.position, capturePlacement.current.delay);
-      const take: Layer = { ...placement, id, name: partName.trim() || `Layer ${layers.length + 1}`, kind: 'recording', enabled: true, volume: .85, recorded: true, blob: encodeWav(samples, sampleRate), duration, peaks: getEngine().peaks(id) };
+      const take: Layer = { ...placement, id, name: partName.trim() || `Layer ${layers.length + 1}`, kind: 'recording', enabled: true, volume: .85, recorded: true, blob: recordingBlob(encodeWavBytes([samples], sampleRate)), duration, peaks: getEngine().peaks(id) };
       getEngine().configureSession([...backingLayers, take], capturePlacement.current.position);
       setPosition(capturePlacement.current.position);
       // A retry adds an alternative; the previous recording and its edits remain intact.
@@ -617,7 +620,7 @@ export function useStudio(startInWorkspace = false) {
 
   return {
     songId, cloudStatus: cloud.status(songId, localRevision), cloudError: cloud.errors[songId], retryCloud: cloud.retry,
-    title, setTitle, artwork, setArtwork, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, retrySave: () => persistSong(), openMySongs,
+    title, setTitle, artwork, setArtwork, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, audioError, retrySave: () => persistSong(), openMySongs,
     layers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
     elapsed, position, recordFrom, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,

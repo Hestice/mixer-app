@@ -1,3 +1,4 @@
+import { RecordingReadError } from './recording-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { CloudConflictError, SyncCanceledError, type CloudTransport } from './cloud-sync';
 import type { CloudSong } from './cloud-manifest';
@@ -51,6 +52,7 @@ export function supabaseTransport(client: SupabaseClient, ownerId: string, activ
 }
 
 export function cloudMessage(reason: unknown) {
+  if (reason instanceof RecordingReadError) return reason.message;
   const detail = reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : '';
   if (/newer app version/i.test(detail)) return 'This song was edited in a newer app version. Reload the app before backing up again.';
   if (/50 MB|missing|unsupported|invalid|completely|changed locally/.test(detail)) return detail;

@@ -5,6 +5,10 @@ export function encodeWav(samples: Float32Array, sampleRate: number): Blob {
 
 /** Interleaved 16-bit PCM WAV, preserving mono or stereo channel layout. */
 export function encodeWavChannels(channels: Float32Array[], sampleRate: number): Blob {
+  return new Blob([encodeWavBytes(channels, sampleRate)], { type: 'audio/wav' });
+}
+
+export function encodeWavBytes(channels: Float32Array[], sampleRate: number): ArrayBuffer {
   const frames = channels[0]?.length ?? 0;
   if (!channels.length || channels.length > 2 || channels.some((channel) => channel.length !== frames)) {
     throw new Error('Audio channels must have the same length.');
@@ -27,5 +31,5 @@ export function encodeWavChannels(channels: Float32Array[], sampleRate: number):
       view.setInt16(44 + frame * blockAlign + channel * 2, Math.round(value * (value < 0 ? 32768 : 32767)), true);
     }
   }
-  return new Blob([bytes], { type: 'audio/wav' });
+  return bytes;
 }
