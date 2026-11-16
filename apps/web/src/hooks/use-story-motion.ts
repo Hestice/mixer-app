@@ -106,7 +106,7 @@ export function useStoryMotion(options: Options) {
     const animation = { progress: 0 };
     const tween = gsap.to(animation, {
       progress: 1,
-      duration: 1.8,
+      duration: 1.1,
       ease: 'sine.inOut',
       onUpdate: () => {
         manualReveal.current = animation.progress;
