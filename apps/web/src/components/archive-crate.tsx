@@ -34,6 +34,7 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, re
 }) {
   const [browsedId, setBrowsedId] = useState<string>();
   const [hoveredId, setHoveredId] = useState<string>();
+  const [tippedCount, setTippedCount] = useState(0);
   const [page, setPage] = useState(0);
   const crate = useRef<HTMLDivElement>(null);
   const lastPage = Math.ceil(songs.length / recordsPerCrate) - 1;
@@ -55,6 +56,7 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, re
     const nextPage = currentPage + direction;
     if (restoring || nextPage < 0 || nextPage > lastPage) return;
     setHoveredId(undefined);
+    setTippedCount(0);
     setPage(nextPage);
   }
 
@@ -74,13 +76,18 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, re
         <button type="button" className="library-dialog-button" aria-label="Next records" aria-disabled={restoring || currentPage === lastPage} onClick={() => browse(1)}><ChevronRight size={17} aria-hidden="true" /></button>
       </div>}
     </header>
-    <div ref={crate} className="archive-crate" onPointerLeave={() => setHoveredId(undefined)}>
+    <div ref={crate} className="archive-crate" onPointerLeave={event => {
+      setHoveredId(undefined);
+      if (!event.currentTarget.querySelector('.archive-record-picker:focus-visible')) setTippedCount(0);
+    }} onBlur={event => {
+      if (!hoveredId && !event.currentTarget.contains(event.relatedTarget)) setTippedCount(0);
+    }}>
       <ul className="archive-records" aria-label="Archived songs">
         {stack.map((song, index) => {
           const isSelected = selected.includes(song.id);
           const blocked = restoring || (!song.canManage && !isSelected);
           return <li key={song.id} className="archive-record" data-flight-song={song.id}
-            data-browsed={song.id === browsed.id} data-hovered={song.id === hoveredId} data-selected={isSelected}
+            data-hovered={song.id === hoveredId} data-selected={isSelected} data-tipped={index < tippedCount}
             style={{ '--slot': stack.length - index - 1 } as CSSProperties}>
             <span className="archive-record-art" aria-hidden="true">
               <span className="archive-record-disc"><RecordDisc artwork={song.artwork} /></span>
@@ -93,8 +100,12 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, re
                 if (song.id === hoveredId && song.id === browsed.id) return;
                 setBrowsedId(song.id);
                 setHoveredId(song.id);
+                setTippedCount(current => Math.max(current, index));
               }}
-              onFocus={() => setBrowsedId(song.id)} onClick={() => {
+              onFocus={event => {
+                setBrowsedId(song.id);
+                if (event.currentTarget.matches(':focus-visible')) setTippedCount(current => Math.max(current, index));
+              }} onClick={() => {
                 setBrowsedId(song.id);
                 if (!blocked) onSelect(song.id);
               }} />

@@ -93,7 +93,6 @@
   --position: calc(var(--depth) * (.8 - var(--slot) * .145));
   --lean: -6deg;
   --sleeve-scale: 1;
-  --selected-rise: 0px;
   --disc-peek: 0px;
   position: absolute;
   left: calc(var(--clearance) + var(--position));
@@ -112,7 +111,7 @@
   transition: transform .32s cubic-bezier(.22,.75,.25,1);
 }
 .archive-record-art, .archive-record-picker {
-  transform: translateY(var(--selected-rise)) skewY(var(--face-skew)) skewX(var(--lean)) scaleY(var(--sleeve-scale));
+  transform: skewY(var(--face-skew)) skewX(var(--lean)) scaleY(var(--sleeve-scale));
   transform-origin: left bottom;
 }
 .archive-record-art {
@@ -134,18 +133,8 @@
   text-shadow: 0 1px 2px #161b1673;
 }
 .archive-record-disc { inset: 3%; transform: translateY(var(--disc-peek)); }
-.archive-record[data-selected=true] {
-  --selected-rise: -8px;
-  --disc-peek: -8px;
-}
-/* Sleeves in front lean farther so the record being browsed stays visible. */
-.archive-record[data-browsed=true]:is([data-hovered=true], :has(.archive-record-picker:focus-visible)) {
-  --lean: 13deg;
-  --sleeve-scale: .84;
-  --disc-peek: -12px;
-}
-.archive-record:has(~ .archive-record[data-browsed=true][data-hovered=true]),
-.archive-record:has(~ .archive-record[data-browsed=true] .archive-record-picker:focus-visible) {
+.archive-record[data-selected=true] { --disc-peek: -8px; }
+.archive-record[data-tipped=true] {
   --lean: 21deg;
   --sleeve-scale: .68;
 }
