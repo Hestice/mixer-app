@@ -28,6 +28,7 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, on
   renderActions: (id: string) => ReactNode;
 }) {
   const [browsedId, setBrowsedId] = useState<string>();
+  const [hoveredId, setHoveredId] = useState<string>();
   const [scrollBounds, setScrollBounds] = useState({ previous: false, next: false });
   const viewport = useRef<HTMLDivElement>(null);
   const records = useRef<HTMLUListElement>(null);
@@ -78,19 +79,23 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, on
       </div>}
     </header>
     <div className="archive-crate" style={{ '--record-count': songs.length } as CSSProperties}>
-      <div ref={viewport} className="archive-crate-scroll">
+      <div ref={viewport} className="archive-crate-scroll" onPointerLeave={() => setHoveredId(undefined)}>
         <ul ref={records} className="archive-records" aria-label="Archived songs">
           {songs.map(song => {
             const isSelected = selected.includes(song.id);
             const blocked = restoring || (!song.canManage && !isSelected);
-            return <li key={song.id} className="archive-record" data-browsing={song.id === browsed.id} data-selected={isSelected}>
+            return <li key={song.id} className="archive-record" data-hovered={song.id === hoveredId} data-selected={isSelected}>
               <span className="archive-record-art" aria-hidden="true">
                 <span className="archive-record-disc"><RecordDisc artwork={song.artwork} /></span>
                 <RecordSleeve artwork={song.artwork} title={song.title} />
                 <span className="archive-record-check">{isSelected && <Check size={15} strokeWidth={2.5} />}</span>
               </span>
               <button type="button" className="archive-record-picker" aria-label={song.title} aria-pressed={isSelected}
-                aria-disabled={blocked} onPointerEnter={event => { if (event.pointerType !== 'touch') setBrowsedId(song.id); }}
+                aria-disabled={blocked} onPointerEnter={event => {
+                  if (event.pointerType === 'touch') return;
+                  setBrowsedId(song.id);
+                  setHoveredId(song.id);
+                }}
                 onFocus={() => setBrowsedId(song.id)} onClick={() => {
                   setBrowsedId(song.id);
                   if (!blocked) onSelect(song.id);
@@ -100,6 +105,7 @@ export function ArchiveCrate({ songs, selected, restoring, onSelect, onClear, on
         </ul>
       </div>
       <div className="archive-crate-front" aria-hidden="true"><span /></div>
+      <div className="archive-crate-side" aria-hidden="true" />
     </div>
     <div className="archive-preview">
       <div className="archive-preview-copy">
