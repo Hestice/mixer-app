@@ -53,7 +53,10 @@ export default function SongsPage() {
     return () => { canceled = true; window.removeEventListener('focus', refresh); window.removeEventListener('pageshow', refresh); };
   }, [cloud.version]);
 
-  const visible = songs.filter((song) => !song.ownerId || cloud.ready && song.ownerId === cloud.user?.id);
+  const openingCloudId = opening?.startsWith('cloud-') ? opening.slice(6) : undefined;
+  const visible = songs.filter((song) => (!song.ownerId || cloud.ready && song.ownerId === cloud.user?.id)
+    // Keep the source sleeve in place while a cloud-only song installs locally.
+    && !(openingCloudId && cloud.links.some(link => link.id === song.id && link.remoteId === openingCloudId)));
   const cloudOnly = cloud.remoteSongs.filter((song) => !cloud.links.some((link) => link.ownerId === cloud.user?.id && link.remoteId === song.id && visible.some((local) => local.id === link.id)));
   useLayoutEffect(() => {
     if (!loading && cloud.ready && flight?.direction === 'songs') {
