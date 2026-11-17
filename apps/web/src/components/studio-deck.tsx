@@ -143,7 +143,7 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
   function arrangeWithKeyboard(event: KeyboardEvent<HTMLButtonElement>, panel: StudioPanel) {
     if (grab.current) return;
     const carrying = drag?.panel === panel && !drag.cursor;
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === 'Enter') {
       event.preventDefault();
       if (!event.repeat) toggleKeyboardDrag(panel);
     } else if (carrying && event.key === 'Escape') {
@@ -193,11 +193,15 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
             data-picked-up={drag?.panel === panel}
             data-target={drag?.target?.kind === 'swap' && drag.target.panel === panel}>
             <div className="studio-panel-bar">
-              <button type="button" className="studio-panel-grip" aria-label={`Move ${label.toLowerCase()}`}
+              <button type="button" className="studio-panel-grip" aria-label={`Move ${label.toLowerCase()}`} data-studio-playback-shortcut
                 aria-describedby="studio-drag-help" title={`Drag to move ${label.toLowerCase()}`}
                 onPointerDown={event => pickUp(event, panel)} onPointerMove={followPointer}
                 onPointerUp={event => putDown(event)} onPointerCancel={event => putDown(event, true)}
                 onLostPointerCapture={event => putDown(event, true)} onKeyDown={event => arrangeWithKeyboard(event, panel)}
+                onKeyUp={event => {
+                  // Space belongs to playback even when playback is unavailable.
+                  if (event.key === ' ') event.preventDefault();
+                }}
                 onClick={event => { if (event.detail === 0 && !grab.current) toggleKeyboardDrag(panel); }}
                 onBlur={() => { if (drag && !drag.cursor) setDrag(null); }}
                 onContextMenu={event => event.preventDefault()}>
@@ -226,7 +230,7 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
       style={{ left: drag.cursor.x, top: drag.cursor.y }}><DragIcon size={15} />
       {drag.target?.kind === 'swap' ? `Swap with ${panelNames[drag.target.panel]}` : panelNames[drag.panel]}
     </div>, document.body)}
-    <span className="studio-sr-only" id="studio-drag-help">Drag to an edge to dock or onto another panel to swap. With a keyboard, press Space to pick up, use the arrow keys for an edge or S to choose a panel, then press Enter to drop.</span>
+    <span className="studio-sr-only" id="studio-drag-help">Drag to an edge to dock or onto another panel to swap. Press Enter to pick up, use the arrow keys for an edge or S to choose a panel, then press Enter to drop or Escape to cancel. Space plays or pauses the song.</span>
     <span className="studio-sr-only" role="status">{announcement}</span>
   </>;
 }

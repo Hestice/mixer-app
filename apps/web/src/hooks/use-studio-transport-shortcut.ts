@@ -13,7 +13,7 @@ export function useStudioTransportShortcut(deck: StudioDeckControls | null) {
     if (target instanceof Element) {
       if (target.closest('dialog, [role="dialog"], [role="alertdialog"], [role="menu"]')) return;
       // A focused control keeps its own Space behavior unless it opts into transport.
-      if (!target.closest('[aria-keyshortcuts="Space"]') &&
+      if (!target.closest('[aria-keyshortcuts="Space"], [data-studio-playback-shortcut]') &&
         target.closest('button, a[href], input, textarea, select, summary, [contenteditable], [role="button"], [role="slider"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"]')) return;
     }
     event.preventDefault();
