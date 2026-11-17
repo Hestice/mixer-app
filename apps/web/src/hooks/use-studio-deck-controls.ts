@@ -27,13 +27,21 @@ export function useStudioDeckControls(studio: Studio) {
     return () => { if (recorder.current === focus) recorder.current = null; };
   }, []);
 
-  async function toggleTransport(keptMix = false) {
-    if (studio.locked || studio.busy || cuePending.current) return;
+  async function toggleTransport({ keptMix = false, instant = false } = {}) {
+    if (studio.locked) return;
+    if (cuePending.current) {
+      if (instant) {
+        studio.pausePlayback();
+        turntable.current?.stop();
+      }
+      return;
+    }
+    if (studio.busy) return;
     if (studio.playing) {
       studio.pausePlayback();
       return;
     }
-    const cue = turntable.current;
+    const cue = instant ? null : turntable.current;
     cuePending.current = true;
     setCueing(true);
     try {

@@ -307,6 +307,7 @@ export function useStudio(startInWorkspace = false) {
   const readSongPosition = useCallback(() => engineRef.current?.position ?? 0, []);
 
   function pausePlayback() {
+    if (startingPlayback.current) playbackRequest.current++;
     const engine = getEngine();
     if (engine.playing && metronomePreview && beatOffset !== undefined) stopMetronome();
     engine.pause();
@@ -339,7 +340,7 @@ export function useStudio(startInWorkspace = false) {
       const [prepared] = await Promise.all([prepareAudio(!keptMix && previewCandidate), cue?.()]);
       if (request !== playbackRequest.current || disposed.current) return;
       await engine.play(keptMix ? prepared : mixRef.current);
-      if (request !== playbackRequest.current || disposed.current) { engine.reset(); return; }
+      if (request !== playbackRequest.current || disposed.current) { engine.pause(); return; }
       if (keptMix) {
         setSoloId(null);
         setPreviewCandidate(false);

@@ -28,37 +28,65 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, deta
   const [openLayer, setOpenLayer] = useState<string | null>(null);
   const optionsId = useId();
   const viewport = useRef<HTMLDivElement>(null);
-  const scrub = useRef<{ pointer: number; x: number; moved: boolean } | null>(null);
-  const finishScrub = useEffectEvent(() => {
-    if (!scrub.current) return;
+  const ruler = useRef<HTMLDivElement>(null);
+  const scrub = useRef<{ input: HTMLInputElement; pointer: number; x: number; moved: boolean; scratching: boolean } | null>(null);
+
+  function finishScrub() {
+    const drag = scrub.current;
+    if (!drag) return;
     scrub.current = null;
-    studio.endScrub();
-  });
+    if (drag.input.hasPointerCapture(drag.pointer)) drag.input.releasePointerCapture(drag.pointer);
+    if (drag.scratching) studio.endScrub();
+  }
+
+  const finishOnLeave = useEffectEvent(finishScrub);
   useEffect(() => {
-    const leave = () => finishScrub();
+    const leave = () => finishOnLeave();
+    window.addEventListener('blur', leave);
     window.addEventListener('pagehide', leave);
-    return () => { window.removeEventListener('pagehide', leave); leave(); };
+    return () => {
+      window.removeEventListener('blur', leave);
+      window.removeEventListener('pagehide', leave);
+      leave();
+    };
   }, []);
 
   const disabled = studio.locked || studio.busy;
   const rows = studio.layers.map(layer => ({ layer, draft: false }));
   if (studio.candidate) rows.push({ layer: studio.candidate, draft: true });
 
+  function moveCursor(x: number, audible: boolean) {
+    const bounds = ruler.current?.getBoundingClientRect();
+    if (!bounds?.width) return;
+    const seconds = Math.max(0, Math.min(1, (x - bounds.left) / bounds.width)) * span;
+    const position = Math.min(span, Math.round(seconds * 100) / 100);
+    if (scrub.current?.scratching) studio.scrubSong(position, audible);
+    else void studio.seekSong(position);
+  }
+
   function beginScrub(event: PointerEvent<HTMLInputElement>) {
-    if (disabled || event.button !== 0 || !event.isPrimary || !studio.beginScrub()) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    scrub.current = { pointer: event.pointerId, x: event.clientX, moved: false };
+    if (disabled || event.button !== 0 || !event.isPrimary) return;
+    // The browser's range drag and pointer capture would both drive the same gesture.
+    event.preventDefault();
+    if (scrub.current) return;
+    const input = event.currentTarget;
+    input.focus({ preventScroll: true });
+    input.setPointerCapture(event.pointerId);
+    scrub.current = { input, pointer: event.pointerId, x: event.clientX, moved: false, scratching: studio.beginScrub() };
+    moveCursor(event.clientX, false);
   }
 
   function moveScrub(event: PointerEvent<HTMLInputElement>) {
     const drag = scrub.current;
-    if (drag?.pointer === event.pointerId && Math.abs(event.clientX - drag.x) >= 3) drag.moved = true;
+    if (drag?.pointer !== event.pointerId) return;
+    if (!(event.buttons & 1)) { finishScrub(); return; }
+    if (!drag.moved && Math.abs(event.clientX - drag.x) < 3) return;
+    drag.moved = true;
+    moveCursor(event.clientX, true);
   }
 
   function endScrub(event: PointerEvent<HTMLInputElement>) {
-    if (scrub.current?.pointer !== event.pointerId) return;
-    scrub.current = null;
-    studio.endScrub();
+    if (scrub.current?.pointer === event.pointerId) finishScrub();
   }
 
   function seekToStart() {
@@ -84,7 +112,7 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, deta
         </select></label>
       </div>
     </div>
-    <p className="timeline-help">Drag the ruler to scrub. Drag a waveform to move it or drag its edges to trim.</p>
+    <p className="timeline-help">Drag the ruler to scrub. Drag a waveform to move it or drag its edges to trim. <kbd>Space</kbd> to play or pause.</p>
     <div className="timeline-scroll" ref={viewport} role="region" aria-label="Song timeline and layers" tabIndex={0}>
       <div className="timeline-canvas" style={{ width: `${zoom * 100}%` }}>
         <div className="timeline-row timeline-ruler-row">
@@ -92,19 +120,16 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, deta
             <span>Song time</span>
             <output aria-live="off">{preciseTime(studio.position)}</output>
           </div>
-          <div className="timeline-ruler">
+          <div className="timeline-ruler" ref={ruler}>
             <div className="timeline-ticks" aria-hidden="true">
               {Array.from({ length: 9 }, (_, index) => <span key={index}>{preciseTime(span * index / 8)}</span>)}
             </div>
-            <input aria-label="Song position" aria-valuetext={preciseTime(studio.position)} type="range" min="0" max={span} step=".01"
+            <input aria-label="Song position" aria-valuetext={preciseTime(studio.position)} aria-keyshortcuts="Space" type="range" min="0" max={span} step=".01"
               value={Math.min(span, studio.position)} disabled={disabled}
               onPointerDown={beginScrub} onPointerMove={moveScrub} onPointerUp={endScrub}
               onPointerCancel={endScrub} onLostPointerCapture={endScrub}
-              onChange={event => {
-                const position = Number(event.target.value);
-                if (scrub.current) studio.scrubSong(position, scrub.current.moved);
-                else void studio.seekSong(position);
-              }} />
+              onKeyDown={event => { if (event.key === ' ') finishScrub(); }}
+              onChange={event => { finishScrub(); void studio.seekSong(Number(event.target.value)); }} />
           </div>
         </div>
         {rows.map(({ layer, draft }) => {

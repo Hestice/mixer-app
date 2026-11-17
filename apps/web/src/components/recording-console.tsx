@@ -4,6 +4,7 @@ import { useLayoutEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
 import { useStudioDeckControls } from '../hooks/use-studio-deck-controls';
+import { useStudioTransportShortcut } from '../hooks/use-studio-transport-shortcut';
 import { useDetachedStudioPanels } from '../hooks/use-detached-studio-panels';
 import { RotateCcw } from './icons';
 import { useRecordNavigation } from './record-transition';
@@ -14,6 +15,7 @@ import '../app/studio.css';
 export function RecordingConsole({ studio }: { studio: Studio }) {
   const { arrive, flight, finish, returnToSongs, rememberArtwork } = useRecordNavigation();
   const deck = useStudioDeckControls(studio);
+  useStudioTransportShortcut(deck);
   const tabs = useDetachedStudioPanels(deck);
   const state = studio.recordingState;
 

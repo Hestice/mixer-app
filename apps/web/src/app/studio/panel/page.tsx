@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { PanelTop } from 'lucide-react';
 import { panelIcons, RecorderPanel, StudioFeedback, TimelinePanel, TurntablePanel } from '../../../components/studio-panel-content';
+import { useStudioTransportShortcut } from '../../../hooks/use-studio-transport-shortcut';
 import { isStudioPanel, panelNames } from '../../../lib/studio-layout';
 import { readOpenerSession, type StudioPanelSession } from '../../../lib/studio-panel-session';
 import '../../studio.css';
@@ -14,6 +15,7 @@ export default function StudioPanelPage() {
   const [connected, setConnected] = useState<{ session: StudioPanelSession | null; song: string | null } | null>(null);
   const session = connected?.session;
   const deck = useSyncExternalStore(session?.subscribe ?? subscribeEmpty, session?.read ?? readEmpty, readEmpty);
+  useStudioTransportShortcut(deck);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
