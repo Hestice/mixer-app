@@ -33,7 +33,7 @@ test('all snap points land on complete scenes, with no partially visible layers 
 });
 
 test('the opening deck and four-layer console fit their available space on short screens', () => {
-  for (const [width, viewport, budget] of [[800, 820, 469], [358, 750, 365], [290, 568, 274]]) {
+  for (const [width, viewport, budget] of [[800, 820, 469], [358, 750, 365], [290, 568, 274], [300, 320, 257]]) {
     const opening = storyGeometry(0, width, viewport, 3, false, budget);
     const harmony = storyGeometry(CHAPTER_STOPS[3], width, viewport, 4, false, budget);
     const recording = storyGeometry(1, width, viewport, 4, false, budget);
@@ -42,6 +42,11 @@ test('the opening deck and four-layer console fit their available space on short
     assert.equal(recording.height, harmony.height);
     assert.ok(harmony.layersY + harmony.layerTitle + 4 * harmony.rowHeight < harmony.height, 'the fourth row fits inside the deck');
   }
+});
+
+test('the keyboard row fits in the mobile console at its own anchor', () => {
+  const geometry = storyGeometry(.40, 345, 667, 2);
+  assert.ok(geometry.layersY + geometry.layerTitle + 2 * geometry.rowHeight < geometry.height);
 });
 
 test('returning to the opening folds up even a song with a kept harmony', () => {
