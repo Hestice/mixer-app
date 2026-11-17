@@ -34,12 +34,12 @@ export function useStoryMotion(options: Options) {
       if (!scene || !canvas || !copy || !note || !footer) return;
       const { progress, layerCount, harmonyKeptManually, keepingHarmony } = latest.current;
       const style = getComputedStyle(scene);
-      const heightBudget = scene.getBoundingClientRect().height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-        - copy.getBoundingClientRect().height - note.getBoundingClientRect().height - footer.getBoundingClientRect().height;
+      const copyHeight = style.display === 'grid' ? 0 : copy.offsetHeight + note.offsetHeight + footer.offsetHeight;
+      const heightBudget = scene.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - copyHeight;
       // Reserve the fourth slot while the second deck opens, so its landing
       // destination stays fixed throughout the harmony transfer.
       const rows = Math.max(layerCount, 3 + segment(progress, .51, .67));
-      const g = storyGeometry(progress, canvas.clientWidth, window.innerHeight, rows, media.matches, heightBudget);
+      const g = storyGeometry(progress, canvas.clientWidth, scene.clientHeight, rows, media.matches, heightBudget);
       const numbers: Record<string, number> = { 'console-height': g.height, 'shell-x': g.shellX, 'shell-width': g.shellWidth, 'song-x': g.songX, 'song-y': g.songY, 'song-width': g.songWidth, 'motion-disc': g.disc, 'layers-x': g.layersX, 'layers-y': g.layersY, 'layers-width': g.layersWidth, 'layer-title-height': g.layerTitle, 'row-height': g.rowHeight, 'trial-x': g.trialX, 'trial-y': g.trialY, 'trial-width': g.trialWidth };
       for (const [name, value] of Object.entries(numbers)) canvas.style.setProperty(`--${name}`, `${value.toFixed(3)}px`);
       canvas.style.setProperty('--unfold', String(g.unfold));

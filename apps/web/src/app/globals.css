@@ -37,7 +37,14 @@ input[type=range] { accent-color: #687b59; }
 .landing-library-link { white-space: nowrap; font-size: 12px; }
 .session-label { color: var(--muted); font-size: 12px; }
 
-.story { height: 500svh; }
+.story {
+  --story-travel: 400svh;
+  height: calc(var(--story-travel) + 100svh);
+}
+@media (max-width: 760px), (pointer: coarse) {
+  /* Keep anchors fixed as browser chrome moves, and leave room to reach the last one. */
+  .story { height: calc(var(--story-travel) + 100dvh); }
+}
 .scene { position: sticky; top: 0; height: 100svh; min-height: 680px; padding: 110px 24px 100px; display: flex; flex-direction: column; align-items: center; overflow: hidden; }
 .scene-copy { text-align: center; max-width: 680px; min-height: 136px; flex-shrink: 0; animation: chapter-arrive .45s ease both; }
 .scene-copy h1 { font-family: 'Manrope', var(--font); font-size: clamp(30px, 3.6vw, 49px); letter-spacing: -2px; font-weight: 500; line-height: 1.12; margin: 0 0 16px; }
@@ -205,12 +212,20 @@ input[type=range] { accent-color: #687b59; }
  .motion-tour .deck-heading { height: 32px; margin: 0 0 10px; display: block; }
  .motion-tour .deck-heading>span { display: block; margin-top: 3px; }
  .motion-tour .deck-readout { margin-top: 10px; }
- .motion-tour .scene-copy { min-height: 148px; }
- .motion-tour .tour-footer { width: 100%; padding-top: calc(var(--tour-deck-gap) + 12px); }
+ .motion-tour .scene-copy { width: min(100%, 370px); min-height: 0; }
+ .motion-tour .scene-copy h1 { text-wrap: balance; }
+ .motion-tour .scene-copy p { font-size: 14px; line-height: 1.45; }
+ .motion-tour .tour-footer { width: 100%; justify-content: space-between; flex-wrap: nowrap; gap: 12px; padding-top: calc(var(--tour-deck-gap) + 10px); }
+ .motion-tour .credits-link { order: 0; width: auto; max-width: 92px; text-align: left; }
+ .motion-tour .next-chapter { min-height: 40px; }
+ .motion-tour .next-chapter strong { font-size: 13px; }
+ .motion-tour .next-chapter>span, .motion-tour .credits-link { font-size: 11px; color: var(--muted); }
+ .motion-tour :is(.candidate-slot, .record-entry) .button { min-height: 44px; font-size: 12px; text-wrap: balance; }
+ .motion-tour :is(.candidate-slot, .record-entry) .text-button { min-height: 36px; font-size: 12px; text-align: center; }
+ .motion-tour .candidate-decision, .motion-tour .record-entry { gap: 6px; }
 }
 @media(max-width:760px) and (max-height:780px) {
  .motion-tour.scene { min-height: 568px; padding-bottom: 12px; }
- .motion-tour .scene-copy { min-height: 132px; }
  .motion-tour .deck-heading { height: 16px; margin-bottom: 10px; }
  .motion-tour .deck-heading>span { display: none; }
  .motion-tour .deck-readout { font-size: 9px; }
@@ -219,19 +234,29 @@ input[type=range] { accent-color: #687b59; }
 }
 @media(max-width:760px) and (max-height:620px) {
  .motion-tour.scene { padding-bottom: 8px; }
- .motion-tour .scene-copy { min-height: 0; }
+ .motion-tour .scene-copy p { font-size: 13px; }
  .motion-tour .tour-footer { padding-top: calc(var(--tour-deck-gap) + 6px); }
  .motion-tour .credits-link { padding-block: 2px; }
 }
 @media(max-width:600px) {
- .site-header .tour-steps { position: absolute; top: 66px; left: 50%; transform: translateX(-50%); }
- .landing-library-link { font-size: 11px; }
- .motion-tour.scene { padding-top: 104px; }
+ .site-header { height: 90px; align-items: flex-start; padding-top: 15px; }
+ .site-header .tour-steps { position: absolute; inset: 44px 0 auto; justify-content: center; }
+ .site-header .tour-steps button { justify-content: center; width: 35px; min-height: 40px; }
+ .site-header .tour-steps button>span:first-child { width: 22px; height: 22px; font-size: 11px; }
+ .landing-library-link { font-size: 13px; }
+ .motion-tour.scene { padding-top: 106px; }
  .motion-tour .mobile-step { display: none; }
 }
 @media(max-width:600px) and (max-height:740px) {
- .site-header .tour-steps { top: 48px; }
- .motion-tour.scene { padding-top: 84px; }
+ .site-header { height: 77px; padding-top: 10px; }
+ .site-header .tour-steps { top: 35px; }
+ .motion-tour.scene { padding-top: 88px; }
+}
+@media(max-width:760px) and (max-height:560px) {
+ .motion-tour.scene { --tour-deck-gap: 14px; min-height: 0; padding-top: 83px; }
+ .motion-tour .scene-copy { padding-bottom: 10px; }
+ .motion-tour .next-chapter { min-height: 38px; }
+ .motion-tour .candidate-slot, .motion-tour .record-entry { margin-top: 10px; }
 }
 @media(prefers-reduced-motion:reduce) {
  .motion-tour .layer { will-change: auto; }
@@ -240,13 +265,13 @@ input[type=range] { accent-color: #687b59; }
 .motion-tour .hardware-labels { opacity: calc(1 - var(--unfold,0)); }
 @media(max-width:760px) {
  .motion-tour .layer-toggle .waveform { display: flex; }
- .motion-tour .layer-name { font-size: 11px; min-width: 0; }
- .motion-tour .layer-switch { font-size: 10px; min-width: 32px; }
+ .motion-tour .layer-name { font-size: 12px; min-width: 0; }
+ .motion-tour .layer-switch { font-size: 11px; min-width: 32px; }
 }
 
 @media(max-width:760px) { .hardware-labels { font-size: 5.8px; } }
 
-/* These markers measure complete scenes; ScrollTrigger handles settling. */
+/* These markers measure the fixed travel through the story. */
 .story { position: relative; }
 .story-anchor { position: absolute; left: 0; width: 1px; height: 1px; pointer-events: none; }
 .scene-note { min-height: 36px; margin-top: 8px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0 20px; }
@@ -265,6 +290,47 @@ input[type=range] { accent-color: #687b59; }
 @media(max-width:760px) and (max-height:620px) {
  .motion-tour:not(.chapter-0) .record-label { width: 74%; height: 74%; padding: 2px; }
  .motion-tour:not(.chapter-0) .disc-action { display: none; }
+}
+
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+ .site-header { height: 48px; padding: 0 4%; align-items: center; }
+ .site-header .tour-steps { position: static; gap: 3px; }
+ .site-header .tour-steps button { display: grid; place-items: center; padding: 0; width: 35px; min-height: 40px; }
+ .site-header .tour-steps button>span:first-child { width: 22px; height: 22px; font-size: 11px; }
+ .site-header .tour-steps button>span:last-child { display: none; }
+ .landing-library-link { font-size: 13px; }
+ .motion-tour.scene {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  column-gap: 18px;
+  align-items: center;
+  min-height: 0;
+  padding: 55px 4% 8px;
+ }
+ .motion-tour .scene-copy { grid-area: 1 / 1; width: 100%; min-height: 0; padding: 0; text-align: left; }
+ .motion-tour .scene-copy h1 { font-size: clamp(22px, 3.4vw, 32px); margin-bottom: 8px; letter-spacing: -1px; text-wrap: balance; }
+ .motion-tour .scene-copy p { font-size: 13px; line-height: 1.45; }
+ .motion-tour .instrument { grid-area: 1 / 2 / 4; width: min(100%, 450px); justify-self: center; }
+ .motion-tour .scene-note { grid-area: 2 / 1; justify-content: flex-start; padding: 0; }
+ .motion-tour .tour-footer { grid-area: 3 / 1; width: 100%; flex-wrap: wrap; justify-content: flex-start; gap: 6px; padding-top: 13px; }
+ .motion-tour .tour-progress { top: 4px; }
+ .motion-tour .next-chapter { padding: 0; min-height: 38px; }
+ .motion-tour .credits-link { order: 3; width: 100%; max-width: none; padding-block: 3px; text-align: left; }
+ .motion-tour :is(.chapter-count, .mobile-step, .deck-heading>span, .deck-readout time, .deck-separator span, .disc-action) { display: none; }
+ .motion-tour .deck-heading { height: 16px; margin-bottom: 10px; font-size: 12px; }
+ .motion-tour .deck-readout { margin-top: 6px; font-size: 10px; }
+ .motion-tour .record-label { gap: 3px; padding: 2px; width: 74%; height: 74%; }
+ .motion-tour .label-title, .motion-tour .layer-name, .motion-tour .layer-switch { min-width: 0; font-size: 11px; }
+ .motion-tour .disc-symbol svg { width: 14px; height: 14px; }
+ .motion-tour .layer-toggle { gap: 4px; }
+ .motion-tour .layer-switch { margin-left: auto; }
+ .motion-tour .candidate-slot, .motion-tour .record-entry { margin-top: 8px; }
+ .motion-tour .layer-identity { margin-bottom: 6px; }
+ .motion-tour .candidate-decision, .motion-tour .record-entry { gap: 4px; }
+ .motion-tour :is(.candidate-slot, .record-entry) .button { min-height: 40px; padding: 7px; font-size: 12px; text-wrap: balance; }
+ .motion-tour :is(.candidate-slot, .record-entry) .button svg:last-child { display: none; }
+ .motion-tour :is(.candidate-slot, .record-entry) .text-button { min-height: 32px; text-align: center; }
 }
 
 /* The moving preview is not interactive, but remains as visible as a kept layer. */

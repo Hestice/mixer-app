@@ -17,16 +17,17 @@ export function useStoryScroll(story: RefObject<HTMLElement | null>, workspace: 
 
     media.add({ all: 'all', reduced: '(prefers-reduced-motion: reduce)' }, (context) => {
       const reduced = !!context.conditions?.reduced;
-      const distance = () => element.querySelector<HTMLElement>('[data-story-stop="1"]')?.offsetTop || 1;
-      const start = () => element.offsetTop;
-      const read = () => clamp((window.scrollY - start()) / distance());
+      const lastAnchor = element.querySelector<HTMLElement>('[data-story-stop="1"]');
+      let storyStart = element.offsetTop;
+      let storyDistance = lastAnchor?.offsetTop || 1;
+      const read = () => clamp((window.scrollY - storyStart) / storyDistance);
       const state = createStoryScrollState(read());
       const wheelInput = createStoryWheelInput();
       let tween: gsap.core.Tween | null = null;
       let idleTimer: ReturnType<typeof setTimeout> | undefined;
       let held = false;
       let touchActive = false;
-      let writtenScroll = window.scrollY;
+      let lastScroll = window.scrollY;
       let source: 'wheel' | 'touch' | 'keyboard' | 'other' = 'other';
       let settling = false;
       let cancelableWheelTail = true;
@@ -39,15 +40,14 @@ export function useStoryScroll(story: RefObject<HTMLElement | null>, workspace: 
         settling = false;
       }
       function write(value: number) {
-        writtenScroll = Math.round(start() + value * distance());
-        window.scrollTo({ top: writtenScroll, behavior: 'instant' });
-        writtenScroll = window.scrollY;
+        window.scrollTo({ top: Math.round(storyStart + value * storyDistance), behavior: 'instant' });
+        lastScroll = window.scrollY;
         setProgress(state.render(read()));
       }
       function animate(destination: number) {
         cancelMotion();
         settling = true;
-        if (reduced || Math.abs(destination - state.progress) * distance() < 1) {
+        if (reduced || Math.abs(destination - state.progress) * storyDistance < 1) {
           write(destination);
           return;
         }
@@ -72,29 +72,35 @@ export function useStoryScroll(story: RefObject<HTMLElement | null>, workspace: 
         }, delay);
       }
       function onNativeScroll() {
-        if (Math.abs(window.scrollY - writtenScroll) < 1) return;
-        if (settling && source === 'touch' && !touchActive) {
-          // End the native touch fling; a new touchstart releases this immediately.
-          write(state.progress);
-          return;
-        }
-        if (settling) {
-          // An uncancelable wheel tail or untracked input must not fight a tween.
-          cancelMotion();
-          scheduleSettle();
-        }
+        if (Math.abs(window.scrollY - lastScroll) < 1) return;
+        lastScroll = window.scrollY;
+        // Native scrolling can resume after a settle starts. Yield to it.
+        const interrupted = settling;
+        if (interrupted) cancelMotion();
         // No corrective scroll write, anchor cap, or per-gesture distance limit.
         // A single continuous gesture can traverse the entire story.
         setProgress(state.native(read()));
-        // Wheel, touch and keys own their release deadline. Native inertia does not.
-        if (source === 'other' && !held) scheduleSettle();
+        // Touch scroll events include the native fling after the finger lifts.
+        if ((interrupted || source === 'other' || source === 'touch') && !held) scheduleSettle();
       }
-      function onResize() {
+      const onResize = () => {
+        const nextStart = element.offsetTop;
+        const nextDistance = lastAnchor?.offsetTop || 1;
+        // The mobile browser toolbar can resize the viewport during a swipe.
+        if (nextStart === storyStart && nextDistance === storyDistance) return;
+        storyStart = nextStart;
+        storyDistance = nextDistance;
+        if (held || source === 'touch') {
+          cancelMotion();
+          setProgress(state.render(read()));
+          if (!held) scheduleSettle();
+          return;
+        }
         const visible = state.progress;
         cancelMotion();
         write(visible);
         scheduleSettle();
-      }
+      };
       function ownsInput(target: EventTarget | null) {
         return target instanceof Element && !target.closest('input, textarea, select, [contenteditable="true"], dialog[open]');
       }
@@ -142,7 +148,7 @@ export function useStoryScroll(story: RefObject<HTMLElement | null>, workspace: 
         scheduleSettle();
       }
       function onTouchEnd(event: TouchEvent) {
-        if (event.touches.length === 0) release();
+        if (touchActive && event.touches.length === 0) release();
       }
       function onKey(event: KeyboardEvent) {
         if (!ownsInput(event.target) || event.altKey || event.ctrlKey || event.metaKey || (event.key === ' ' && event.target instanceof Element && event.target.closest('button, a'))) return;

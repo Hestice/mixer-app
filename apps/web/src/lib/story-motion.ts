@@ -28,6 +28,7 @@ export function storyGeometry(progress: number, width: number, viewportHeight: n
   const mobile = width < 600;
   const short = viewportHeight <= 780;
   const compact = mobile && viewportHeight <= 620;
+  const veryShort = compact && viewportHeight <= 560;
   const settle = (value: number) => reducedMotion ? Number(value >= .5) : value;
   const unfold = settle(segment(progress, .08, .25));
   const build = settle(segment(progress, .30, .50));
@@ -39,15 +40,16 @@ export function storyGeometry(progress: number, width: number, viewportHeight: n
   const layerTitle = compact ? 20 : 24;
   const layerGap = compact ? 6 : 14;
   const layerHeight = layerTitle + Math.max(1, layerCount) * rowHeight;
-  const middleRows = rowHeight * lerp(1, layerCount, build);
+  const builtLayers = 1 + layerReveal('keys', progress) + layerReveal('rhythm', progress);
+  const middleRows = rowHeight * Math.min(layerCount, Math.max(builtLayers, lerp(1, layerCount, build)));
   const deckChrome = pad * 2 + heading;
   const trialControls = compact ? 148 : 170;
   const fullChrome = deckChrome + Math.max(readout + layerGap + layerHeight, trialControls);
   const middleChrome = deckChrome + readout + (mobile ? layerGap + layerTitle + middleRows : 0);
   const fitDisc = (preferred: number, chrome: number, min: number) => Math.max(min, Math.min(preferred, heightBudget - chrome));
-  const fullDisc = fitDisc(mobile ? short ? 104 : 142 : Math.min(215, Math.max(130, (viewportHeight - 400) * .44)), fullChrome, compact ? 80 : 94);
+  const fullDisc = fitDisc(mobile ? short ? 104 : 142 : Math.min(215, Math.max(130, (viewportHeight - 400) * .44)), fullChrome, veryShort ? 62 : compact ? 80 : 94);
   const introDisc = fitDisc(mobile ? short ? 180 : 220 : Math.min(270, Math.max(220, viewportHeight - 420)), deckChrome + readout, 128);
-  const middleDisc = mobile ? fitDisc(short ? Math.max(104, 138 - Math.max(0, layerCount - 3) * 34) : 190, middleChrome, 100) : fullDisc;
+  const middleDisc = mobile ? fitDisc(short ? Math.max(104, 138 - Math.max(0, layerCount - 3) * 34) : 190, middleChrome, veryShort ? 80 : 100) : fullDisc;
   const disc = lerp(lerp(introDisc, middleDisc, unfold), fullDisc, open);
   const introWidth = Math.min(width, 390);
   const middleWidth = Math.min(width, 680);

@@ -93,7 +93,7 @@ export function ListeningRoom() {
     </header>
 
     <main className={`story ${studio.workspace ? 'workspace' : ''}`} ref={storyRef}>
-      {!studio.workspace && STORY_STOPS.map((stop) => <div key={stop} className="story-anchor" data-story-stop={stop} aria-hidden="true" style={{ top: `calc((100% - 100svh) * ${stop})` }} />)}
+      {!studio.workspace && STORY_STOPS.map((stop) => <div key={stop} className="story-anchor" data-story-stop={stop} aria-hidden="true" style={{ top: `calc(var(--story-travel) * ${stop})` }} />)}
       <div ref={sceneRef} className={`scene motion-tour chapter-${chapter} ${showRight ? 'two-decks' : 'one-deck'}`}>
         <div className="scene-copy">
           <div className="mobile-step">{studio.workspace ? 'Your session' : `${chapter + 1} of 5 / ${copy.label}`}</div>
