@@ -1,6 +1,6 @@
 import type { CloudSong } from './cloud-manifest';
 import { lifecycle, type LibraryPatch } from './library-entry';
-import { hasLegacyRecordings, storeRecordingContent, type StoredSong } from './recording-storage';
+import { hasLegacyRecordings, recordingReferences, storeRecordingContent, writeSongRecord, SONG_AUDIO_STORE, type StoredSong } from './recording-storage';
 import { openDatabase, openLocalSong, readLocal, songChanged, summarizeSong, type SavedSong } from './song-store';
 
 export interface BackupLink {
@@ -85,17 +85,19 @@ export async function installCloudSong(song: SavedSong, link: BackupLink, expect
   const stored = await storeRecordingContent(song);
   const db = await openDatabase();
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(['songs', 'summaries', 'backups'], 'readwrite');
-    let failure: Error | undefined;
+    const tx = db.transaction(['songs', 'summaries', 'backups', SONG_AUDIO_STORE], 'readwrite');
+    let failure: unknown;
     const request = tx.objectStore('songs').get(song.id);
     request.onsuccess = () => {
-      const previous = request.result as SavedSong | undefined;
+      const previous = request.result as StoredSong | undefined;
       if ((previous?.revision ?? 0) !== expectedRevision || previous && previous.ownerId !== link.ownerId) {
         failure = new Error('This song changed locally while downloading. Open it again to keep your latest edits.'); tx.abort(); return;
       }
-      tx.objectStore('songs').put(stored);
-      tx.objectStore('summaries').put(summarizeSong(song));
-      tx.objectStore('backups').put(link);
+      try {
+        writeSongRecord(tx, stored, previous);
+        tx.objectStore('summaries').put(summarizeSong(song));
+        tx.objectStore('backups').put(link);
+      } catch (reason) { failure = reason; tx.abort(); }
     };
     tx.oncomplete = () => { db.close(); songChanged(); resolve(); };
     tx.onabort = () => { db.close(); reject(failure ?? tx.error); };
@@ -151,7 +153,7 @@ export async function cacheCloudLibrary(ownerId: string, cloudSongs: CloudSong[]
 export async function removeDownloadedCopies(ownerId: string): Promise<number> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(['songs', 'summaries', 'backups'], 'readwrite');
+    const tx = db.transaction(['songs', 'summaries', 'backups', SONG_AUDIO_STORE], 'readwrite');
     let count = 0;
     const request = tx.objectStore('backups').getAll();
     request.onsuccess = () => {
@@ -159,9 +161,10 @@ export async function removeDownloadedCopies(ownerId: string): Promise<number> {
         if (link.ownerId !== ownerId) continue;
         const songRequest = tx.objectStore('songs').get(link.id);
         songRequest.onsuccess = () => {
-          const song = songRequest.result as SavedSong | undefined;
+          const song = songRequest.result as StoredSong | undefined;
           if (song && song.revision === link.syncedLocalRevision && !link.attempt && !link.libraryEdit) {
             for (const name of ['songs', 'summaries', 'backups']) tx.objectStore(name).delete(link.id);
+            for (const audioId of recordingReferences(song)) tx.objectStore(SONG_AUDIO_STORE).delete([link.id, audioId]);
             count++;
           }
         };
