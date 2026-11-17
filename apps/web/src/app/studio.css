@@ -77,12 +77,24 @@
 .studio-playback[data-compact=true] { --studio-vinyl-size: 70px; padding-block: 6px; }
 .studio-transport .button { padding: 10px 15px; }
 .studio-transport time { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
-.studio-empty { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 255px), 1fr)); align-items: start; gap: 18px; max-width: 720px; margin-inline: auto; padding: 18px 0; }
-.studio-empty-record { padding: 14px 8px; }
-.studio-empty h2 { font: 500 23px 'Manrope',var(--font); letter-spacing: -.7px; margin: 0 0 6px; }
-.studio-empty p { font-size: 12px; color: var(--muted); line-height: 1.55; margin: 0 0 16px; }
-.studio-empty-record .button { padding: 11px 14px; }
-.studio-song-import { min-width: 0; }
+.studio-empty { display: grid; gap: 18px; padding: 18px 0; }
+.studio-song-import { min-width: 0; width: min(100%, 720px); justify-self: center; }
+.studio-recorder-guide {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: end;
+  width: fit-content;
+  margin: 0;
+  color: #50624a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.studio-recorder-guide svg { flex: none; }
+.studio-recorder-guide[data-direction=left] { justify-self: start; }
+.studio-recorder-guide[data-direction=left] svg { order: -1; transform: rotate(180deg); }
+.studio-recorder-guide[data-direction=top] svg { transform: rotate(-90deg); }
+.studio-recorder-guide[data-direction=bottom] svg { transform: rotate(90deg); }
 .studio-import-surface {
   position: relative;
   display: grid;
@@ -90,18 +102,15 @@
   grid-template-columns: 97px minmax(0, 1fr);
   min-height: 112px;
   padding: 12px;
-  border: 1px solid #bdcbb3;
+  border: 1.5px dashed #859575;
   border-radius: 12px;
   background: linear-gradient(135deg, #eef2e6, #f8f9f2);
-  box-shadow: 0 1px 0 #fff inset, 0 5px 10px -8px #35452f80;
-  transition: background .22s ease, border-color .22s ease, box-shadow .22s ease;
+  transition: background .22s ease, border-color .22s ease;
 }
 .studio-import-surface:has(.studio-import-pick:hover:not(:disabled)), .studio-import-surface[data-over=true] {
-  border-color: #81966f;
+  border-color: #527244;
   background: #e8efdf;
-  box-shadow: 0 1px 0 #fff inset, 0 5px 12px -6px #35452f80;
 }
-.studio-import-surface[data-over=true] { outline: 2px solid #81966f; outline-offset: 2px; }
 .studio-import-pick { text-align: left; }
 .studio-import-pick::before { position: absolute; inset: 0; border-radius: 12px; content: ''; }
 .studio-import-pick:focus-visible { outline: none; }
@@ -132,7 +141,7 @@
 .studio-import-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .studio-import-progress progress { width: 100%; height: 8px; margin-block: 4px; accent-color: #647b54; }
 .studio-import-progress button { justify-self: start; padding: 4px; }
-.studio-song-import p { margin: 8px 0 0; }
+.studio-song-import p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .studio-song-import .studio-import-error { color: #8a462e; }
 @media (prefers-reduced-motion: reduce) { .studio-import-surface, .studio-import-disc { transition: none; } }
 .studio-ruler { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); padding: 18px 0 4px; font-variant-numeric: tabular-nums; }
@@ -985,6 +994,9 @@
 .studio-detached-workspace .timeline-toolbar { justify-content: flex-start; }
 @media (max-width: 760px) {
   .studio-deck-grid { grid-template-areas: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--deck-stacked-rows); }
+  .studio-recorder-guide[data-stacked-direction] { justify-self: end; }
+  .studio-recorder-guide[data-stacked-direction=top] svg { order: 0; transform: rotate(-90deg); }
+  .studio-recorder-guide[data-stacked-direction=bottom] svg { order: 0; transform: rotate(90deg); }
   .studio-deck-grid > .studio-deck-panel { grid-area: auto; border: 0; }
   .studio-deck-grid > .studio-deck-panel + .studio-deck-panel { border-top: 1px solid var(--line); }
   .studio-deck-panel[data-panel=recorder][data-primary=false] { height: auto; }

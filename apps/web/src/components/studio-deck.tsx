@@ -73,6 +73,12 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
   const attached = visibleDeckLayout(layout, tabs.panels);
   const matrix = attached ? deckGrid(attached) : [];
   const visible = [...new Set(matrix.flat())];
+  const recorderIndex = visible.indexOf('recorder');
+  const stackedRecorderDirection = recorderIndex < visible.indexOf('timeline') ? 'top' : 'bottom';
+  const sharedRecorderRow = matrix.find(row => row.includes('timeline') && row.includes('recorder'));
+  const recorderDirection = sharedRecorderRow
+    ? sharedRecorderRow.indexOf('recorder') < sharedRecorderRow.indexOf('timeline') ? 'left' : 'right'
+    : stackedRecorderDirection;
   const primary = visible.includes('timeline') ? 'timeline' : visible.includes('recorder') ? 'recorder' : visible[0];
   const primaryRow = matrix.findIndex(row => row.includes(primary) && row.includes('recorder'));
   const fillRow = primaryRow < 0 ? matrix.findIndex(row => row.includes(primary)) : primaryRow;
@@ -214,7 +220,8 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
               </div>
             </div>
             {panel === 'turntable' ? <TurntablePanel deck={deck} /> : panel === 'timeline'
-              ? <TimelinePanel deck={deck} /> : <RecorderPanel deck={deck} />}
+              ? <TimelinePanel deck={deck} recorderGuide={recorderIndex >= 0 ? { direction: recorderDirection, stackedDirection: stackedRecorderDirection } : undefined} />
+              : <RecorderPanel deck={deck} />}
           </div>;
         })}
         {!visible.length && <p className="studio-all-detached">All panels are open in separate tabs.</p>}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type DragEvent } from 'react';
-import { ArrowDownToLine, AudioLines, X } from 'lucide-react';
+import { AudioLines, Upload, X } from 'lucide-react';
 import type { Studio } from '../hooks/use-studio';
 import { splitDurationLimit } from '../lib/song-separation';
 import { RecordDisc } from './record-artwork';
@@ -53,7 +53,7 @@ export function SongImport({ studio }: { studio: Studio }) {
         <span className="studio-import-copy"><strong className="studio-import-title">Split a song</strong>
           <span>Drop a file or browse</span><small>MP3 or WAV · Up to {splitDurationLimit}</small>
         </span>
-        <ArrowDownToLine className="studio-import-icon" size={16} aria-hidden="true" />
+        <Upload className="studio-import-icon" size={18} aria-hidden="true" />
       </button>}
     </div>
     {split ? <p>Splitting on this device. Keep this tab open.</p> : <p>Get separate vocals, drums, bass, and instruments.</p>}
