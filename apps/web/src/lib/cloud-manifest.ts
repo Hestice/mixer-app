@@ -3,6 +3,7 @@ import { validRecordArt } from './record-art';
 import type { Layer, RecordingTake } from './session';
 import type { SavedSong, SongContent } from './song-store';
 import { takesOf, selectTake } from './clip-edits';
+import { MAX_BACKUP_AUDIO_BYTES } from './recording-storage';
 
 export interface CloudAudio { path: string; sha256: string; size: number }
 export type CloudTake = Omit<RecordingTake, 'blob'> & { audio?: CloudAudio };
@@ -32,7 +33,7 @@ export async function makeManifest(song: Omit<SavedSong, 'createdAt'> & { create
   async function convertTake(take: RecordingTake): Promise<CloudTake> {
     const { blob, ...rest } = take;
     if (!blob) throw new Error('A recording is missing. The cloud backup was not changed.');
-    if (blob.size > 50 * 1024 * 1024) throw new Error('A take is larger than the 50 MB backup limit. It is still saved locally; download its WAV for a separate copy.');
+    if (blob.size > MAX_BACKUP_AUDIO_BYTES) throw new Error('A take is larger than the 50 MB backup limit. It is still saved locally; download its WAV for a separate copy.');
     const sha256 = await hashAudio(blob);
     const path = `${ownerId}/${sha256}.wav`;
     if (!uploaded.has(path)) { await upload(path, blob); uploaded.add(path); }
@@ -79,7 +80,7 @@ export async function downloadManifest(manifest: CloudManifest, ownerId: string,
       || (take.trimStart ?? 0) >= (take.trimEnd ?? duration)) throw new Error('A recording edit is invalid.');
   }
   function validateAudio(audio?: CloudAudio) {
-    if (!audio || !/^[a-f0-9]{64}$/.test(audio.sha256) || audio.path !== `${ownerId}/${audio.sha256}.wav` || !Number.isFinite(audio.size) || audio.size < 1 || audio.size > 50 * 1024 * 1024) throw new Error('A recording reference is invalid.');
+    if (!audio || !/^[a-f0-9]{64}$/.test(audio.sha256) || audio.path !== `${ownerId}/${audio.sha256}.wav` || !Number.isFinite(audio.size) || audio.size < 1 || audio.size > MAX_BACKUP_AUDIO_BYTES) throw new Error('A recording reference is invalid.');
   }
   // Validate every alternative before fetching anything or replacing local data.
   for (const layer of [...manifest.layers, ...(manifest.candidate ? [manifest.candidate] : [])]) {

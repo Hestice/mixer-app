@@ -93,6 +93,12 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, deta
     void studio.seekSong(0);
   }
 
+  if (!rows.length) return <section className="studio-song" aria-label="Layers and timeline">
+    <div className="timeline-scroll" role="region" aria-label="Start a song" tabIndex={0}>
+      <div className="timeline-details">{children}</div>
+    </div>
+  </section>;
+
   return <section className="studio-song" aria-labelledby="studio-layers-title">
     <div className="timeline-toolbar">
       <h2 id="studio-layers-title" className="studio-sr-only">Layers</h2>
