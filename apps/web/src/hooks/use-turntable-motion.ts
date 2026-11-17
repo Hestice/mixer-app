@@ -48,7 +48,7 @@ export function useTurntableMotion(playing: boolean, clock?: SongClock) {
     lastStop.current = stopVersion;
     const rotate = gsap.quickSetter(disc, 'rotation', 'deg');
     const followClock = () => {
-      if (!motion.matches && !resetTimeline.current && position.angle === TONEARM.playAngle && readPosition) {
+      if (!motion.matches && !resetTimeline.current && readPosition) {
         rotate(vinylAngle(readPosition()));
       }
     };

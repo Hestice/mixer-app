@@ -55,7 +55,7 @@ export function TurntablePanel({ deck }: { deck: StudioDeckControls }) {
 export function TimelinePanel({ deck, detached = false }: { deck: StudioDeckControls; detached?: boolean }) {
   const { studio } = deck;
   return <SongTimeline studio={studio} span={deck.span} onRetake={deck.retakeLayer}
-    cueing={deck.cueing} onToggleMix={() => void deck.toggleTransport(true)}
+    cueing={deck.cueing} onToggleMix={() => void deck.toggleTransport({ keptMix: true })}
     detached={detached} onStop={deck.stopTransport}>
     {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={studio.recordingState !== 'idle' || studio.busy} onClick={deck.addLayer}><Mic size={17} />Record your first layer</button></div>}
     {!!studio.archivedLayers.length && <details className="layer-archive">

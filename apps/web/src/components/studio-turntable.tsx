@@ -112,7 +112,7 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
     const steps: Record<string, number> = { ArrowLeft: -.25, ArrowDown: -.25, ArrowRight: .25, ArrowUp: .25, PageDown: -2, PageUp: 2 };
     if (event.key in steps) seek(studio.readSongPosition() + steps[event.key]);
     else if (event.key === 'Home' || event.key === 'End') seek(event.key === 'Home' ? 0 : span);
-    else if (event.key === 'Enter' || event.key === ' ') { if (!event.repeat) toggle(); }
+    else if (event.key === 'Enter') { if (!event.repeat) toggle(); }
     else return;
     event.preventDefault();
   }
@@ -120,7 +120,7 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
   return <div className="studio-song-top" role="group" aria-label="Song transport">
     <div className="studio-turntable" data-studio-record={studio.songId}>
       <div className="platter-surround">
-        <div className="platter studio-jog-wheel" role="slider" tabIndex={0} aria-label="Seek with vinyl" aria-describedby="studio-jog-help"
+        <div className="platter studio-jog-wheel" role="slider" tabIndex={0} aria-label="Seek with vinyl" aria-describedby="studio-jog-help" aria-keyshortcuts="Space"
           aria-valuemin={0} aria-valuemax={span} aria-valuenow={Math.min(span, studio.position)} aria-valuetext={preciseTime(studio.position)}
           aria-disabled={disabled || undefined} onPointerDown={pointerDown} onPointerMove={pointerMove}
           onPointerUp={event => endPointer(event, true)} onPointerCancel={endPointer} onLostPointerCapture={endPointer} onKeyDown={keyDown}>
@@ -135,7 +135,7 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
     <div className="studio-song-summary">
       <p className="studio-song-meta">{studio.layers.length} {studio.layers.length === 1 ? 'layer' : 'layers'} · {timeLabel(duration)}</p>
       <div className="studio-transport">
-        <button className="button button-light" disabled={!canPlay || disabled} onClick={toggle}>
+        <button className="button button-light" disabled={!canPlay || disabled} aria-keyshortcuts="Space" title="Play or pause (Space)" onClick={toggle}>
           {studio.playing ? <Pause size={15} /> : <Play size={15} />}{studio.playing ? 'Pause' : cueing ? 'Cueing…' : 'Play song'}
         </button>
         <button className="button button-light" disabled={studio.locked || (studio.busy && !cueing) || (!studio.playing && !cueing && studio.position === 0)} onClick={onStopPlayback}><Square size={14} />Stop</button>
