@@ -1,0 +1,10 @@
+SCNet: Sparse Compression Network for Music Source Separation
+Weinan Tong, Jiaxu Zhu, Jun Chen, Shiyin Kang, Tao Jiang, Yang Li, Zhiyong Wu, Helen Meng
+https://arxiv.org/abs/2401.13276
+
+Original model: https://github.com/starrytong/SCNet
+Weights license confirmation: https://github.com/starrytong/SCNet/issues/35
+Checkpoint distribution: https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v.1.0.6
+ONNX export and compaction by audiojs:
+https://huggingface.co/audiojs/scnet/tree/e71bcdb42bce1d62b7fae25ba90fcbcf90f73f46
+SHA-256: 98228931494151762a1c4ab1ec7899a894b1f81fd4a509921a9d2f9bacc50845

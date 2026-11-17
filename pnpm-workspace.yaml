@@ -5,5 +5,6 @@ allowBuilds:
   esbuild: true
   sharp: true
   '@nestjs/core': true
+  protobufjs: false
 minimumReleaseAgeExclude:
   - lucide-react@1.73.0

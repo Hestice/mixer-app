@@ -7,6 +7,7 @@ import { useTurntableMotion } from '../hooks/use-turntable-motion';
 import { Check, Download, Plus, X } from './icons';
 import { RecordCustomizer } from './record-customizer';
 import { SongTimeline } from './song-timeline';
+import { SongImport } from './song-import';
 import { StudioCapturePanel } from './studio-capture-panel';
 import { LayerActions } from './studio-layer';
 import { StudioTurntable } from './studio-turntable';
@@ -58,7 +59,14 @@ export function TimelinePanel({ deck, detached = false }: { deck: StudioDeckCont
   return <SongTimeline studio={studio} span={deck.span} onRetake={deck.retakeLayer}
     cueing={deck.cueing} onToggleMix={() => void deck.toggleTransport({ keptMix: true })}
     detached={detached} onStop={deck.stopTransport}>
-    {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={studio.recordingState !== 'idle' || studio.busy} onClick={event => deck.addLayer(event.detail === 0)}><Mic size={17} />Record your first layer</button></div>}
+    {!studio.layers.length && !studio.candidate && <div className="studio-empty">
+      {!studio.retakeLayerId && <SongImport studio={studio} />}
+      <div className="studio-empty-record">
+        <h2>Start with a small idea.</h2>
+        <p>A chord progression or a melody.</p>
+        <button className="button button-dark" disabled={studio.locked || studio.busy} onClick={event => deck.addLayer(event.detail === 0)}><Mic size={17} aria-hidden="true" />Record your first layer</button>
+      </div>
+    </div>}
     {!!studio.archivedLayers.length && <details className="layer-archive">
       <summary><Archive size={14} aria-hidden="true" /> Archived layers <span>{studio.archivedLayers.length}</span></summary>
       <ul>{studio.archivedLayers.map(layer => <li key={layer.id}><span>{layer.name}</span><LayerActions layer={layer} studio={studio} archived /></li>)}</ul>

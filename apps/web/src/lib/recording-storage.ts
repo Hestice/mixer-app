@@ -6,6 +6,7 @@ type StoredTake = Omit<RecordingTake, 'blob'> & StoredAudio;
 type StoredLayer = Omit<Layer, 'blob' | 'takes'> & StoredAudio & { takes?: StoredTake[] };
 export type StoredSong = Omit<SavedSong, 'layers' | 'candidate'> & { layers: StoredLayer[]; candidate: StoredLayer | null };
 const bytes = new WeakMap<Blob, Promise<ArrayBuffer>>();
+export const MAX_BACKUP_AUDIO_BYTES = 50 * 1024 * 1024;
 
 export class RecordingReadError extends Error {
   constructor(readonly layerName: string, cause?: unknown) {
