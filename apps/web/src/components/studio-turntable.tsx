@@ -71,7 +71,7 @@ export function StudioTurntable({ studio, span, duration, compact, motion, onTog
 
   function pointerDown(event: PointerEvent<HTMLDivElement>) {
     if (disabled || event.button !== 0 || !event.isPrimary) return;
-    event.currentTarget.focus({ preventScroll: true });
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     gesture.current = {
       pointer: event.pointerId, x: event.clientX, y: event.clientY, startedAt: event.timeStamp, angle: pointerAngle(event),

@@ -37,7 +37,8 @@ export function ClipEditor({ layer, studio, span, draft = false, timelineOnly = 
 
   function start(event: PointerEvent<HTMLButtonElement>, kind: Drag['kind']) {
     if (disabled || event.button !== 0) return;
-    event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
     studio.beginEdit();
     drag.current = { kind, x: event.clientX, width: (kind === 'move' || timelineOnly ? lane : trimLane).current!.getBoundingClientRect().width, base: clipBounds(layer), patch: {} };
   }

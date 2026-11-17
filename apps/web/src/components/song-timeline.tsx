@@ -70,7 +70,6 @@ export function SongTimeline({ studio, span, onRetake, cueing, onToggleMix, deta
     event.preventDefault();
     if (scrub.current) return;
     const input = event.currentTarget;
-    input.focus({ preventScroll: true });
     input.setPointerCapture(event.pointerId);
     scrub.current = { input, pointer: event.pointerId, x: event.clientX, moved: false, scratching: studio.beginScrub() };
     moveCursor(event.clientX, false);

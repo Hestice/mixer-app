@@ -104,6 +104,7 @@ export function StudioDeck({ deck, tabs }: { deck: StudioDeckControls; tabs: Ret
 
   function pickUp(event: PointerEvent<HTMLButtonElement>, panel: StudioPanel) {
     if (event.button !== 0 || !event.isPrimary || grab.current) return;
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     grab.current = { panel, pointer: event.pointerId, x: event.clientX, y: event.clientY, moving: false };
   }
