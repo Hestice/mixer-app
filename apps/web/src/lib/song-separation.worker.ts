@@ -1,9 +1,11 @@
 import separate from '@audio/neural-separate';
+import { env } from 'onnxruntime-web/wasm';
 import type { EncodedStem, SplitInput, SplitMessage, StemId } from './song-separation';
 import { extractPeaks } from './session';
 import { encodeWavBytes } from './wav';
 
 const stemOrder: StemId[] = ['vocals', 'drums', 'bass', 'other'];
+env.wasm.numThreads = self.crossOriginIsolated ? Math.min(navigator.hardwareConcurrency || 1, 8) : 1;
 
 self.onmessage = async ({ data }: MessageEvent<SplitInput>) => {
   try {

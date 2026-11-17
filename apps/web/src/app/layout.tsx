@@ -9,5 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><CloudProvider><RecordTransitionProvider>{children}</RecordTransitionProvider></CloudProvider></body></html>;
+  return <html lang="en">
+    <head>
+      <link rel="stylesheet" crossOrigin="anonymous" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700&display=swap" />
+    </head>
+    <body><CloudProvider><RecordTransitionProvider>{children}</RecordTransitionProvider></CloudProvider></body>
+  </html>;
 }
