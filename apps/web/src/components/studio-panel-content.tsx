@@ -10,6 +10,7 @@ import { SongTimeline } from './song-timeline';
 import { StudioCapturePanel } from './studio-capture-panel';
 import { LayerActions } from './studio-layer';
 import { StudioTurntable } from './studio-turntable';
+import { StudioVolumeSlider } from './studio-volume-slider';
 
 export const panelIcons = { turntable: Disc3, timeline: AudioLines, recorder: Mic };
 
@@ -44,7 +45,7 @@ export function TurntablePanel({ deck }: { deck: StudioDeckControls }) {
       onTogglePlayback={deck.toggleTransport} onStopPlayback={deck.stopTransport} onEdit={() => setCustomizing(true)}
       compact={deck.compactDeck} onToggleCompact={() => deck.setCompactDeck(value => !value)} />
     <div className="studio-mix" role="group" aria-label="Song mix">
-      <label>Song volume<input type="range" min="0" max="1" step=".01" value={studio.volume} onChange={event => studio.setVolume(Number(event.target.value))} /></label>
+      <label>Song volume<StudioVolumeSlider value={studio.volume} onChange={studio.setVolume} /></label>
       {!!studio.layers.length && <button className="button button-light" disabled={studio.locked || studio.busy} onClick={() => void studio.downloadSong()} aria-describedby="song-export-help"><Download size={16} />{studio.exportBusy ? 'Preparing song…' : 'Download song'}</button>}
       {!!studio.layers.length && <p id="song-export-help" className="studio-export-help">One WAV with your kept takes, trims, timing and volumes. Muted layers stay silent.{studio.soloId ? ' Downloads use the full song mix.' : ''}{studio.candidate ? ' Keep the take under review to include it.' : ''}</p>}
       <p className="studio-export-status" role="status">{studio.exportStatus}</p>
@@ -57,12 +58,12 @@ export function TimelinePanel({ deck, detached = false }: { deck: StudioDeckCont
   return <SongTimeline studio={studio} span={deck.span} onRetake={deck.retakeLayer}
     cueing={deck.cueing} onToggleMix={() => void deck.toggleTransport({ keptMix: true })}
     detached={detached} onStop={deck.stopTransport}>
-    {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={studio.recordingState !== 'idle' || studio.busy} onClick={deck.addLayer}><Mic size={17} />Record your first layer</button></div>}
+    {!studio.layers.length && <div className="studio-empty"><span className="studio-empty-lines" aria-hidden="true">{[9, 18, 30, 42, 24, 12, 22].map((height, index) => <i key={index} style={{ height }} />)}</span><h2>Start with a small idea.</h2><p>A chord progression. A melody.<br />Something you want to remember.</p><button className="button button-dark" disabled={studio.recordingState !== 'idle' || studio.busy} onClick={event => deck.addLayer(event.detail === 0)}><Mic size={17} />Record your first layer</button></div>}
     {!!studio.archivedLayers.length && <details className="layer-archive">
       <summary><Archive size={14} aria-hidden="true" /> Archived layers <span>{studio.archivedLayers.length}</span></summary>
       <ul>{studio.archivedLayers.map(layer => <li key={layer.id}><span>{layer.name}</span><LayerActions layer={layer} studio={studio} archived /></li>)}</ul>
     </details>}
-    {!!studio.layers.length && <button className="studio-add" disabled={studio.locked || studio.busy || !!studio.candidate} onClick={deck.addLayer}><Plus size={16} />Add another layer</button>}
+    {!!studio.layers.length && <button className="studio-add" disabled={studio.locked || studio.busy || !!studio.candidate} onClick={event => deck.addLayer(event.detail === 0)}><Plus size={16} />Add another layer</button>}
     {deck.notice && <p className="studio-notice" role="status"><Check size={15} />{deck.notice}</p>}
   </SongTimeline>;
 }
@@ -73,10 +74,10 @@ export function RecorderPanel({ deck, detached }: { deck: StudioDeckControls; de
   const panel = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    const unregister = registerRecorder(() => {
+    const unregister = registerRecorder(moveFocus => {
       if (document.hidden) window.focus();
       const target = recordButton.current?.disabled ? panel.current : recordButton.current;
-      target?.focus({ preventScroll: true });
+      if (moveFocus) target?.focus({ preventScroll: true });
       target?.scrollIntoView({ block: 'nearest' });
     });
     window.addEventListener('pagehide', unregister);

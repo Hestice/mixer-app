@@ -5,6 +5,7 @@ import type { Studio } from '../hooks/use-studio';
 import { layerColors, type Layer, type LayerColor } from '../lib/session';
 import { ClipEditor, TakePicker } from './clip-editor';
 import { LibraryActions } from './library-actions';
+import { StudioVolumeSlider } from './studio-volume-slider';
 
 export function LayerIconButton({ hint, label, ...button }: ComponentPropsWithoutRef<'button'> & { label: string; hint: string }) {
   return <button className="studio-layer-icon" type="button" aria-label={label} data-hint={hint} {...button} />;
@@ -22,7 +23,7 @@ export function LayerOptions({ id, layer, studio, span, onRetake, cueing, onTogg
   layer: Layer;
   studio: Studio;
   span: number;
-  onRetake: (id: string) => void;
+  onRetake: (id: string, moveFocus: boolean) => void;
   cueing: boolean;
   onToggleMix: () => void;
 }) {
@@ -38,9 +39,8 @@ export function LayerOptions({ id, layer, studio, span, onRetake, cueing, onTogg
       <div className="studio-layer-adjustments">
         <label className="studio-layer-volume" title="Layer volume">
           <Volume2 size={16} aria-hidden="true" />
-          <input aria-label={`${layer.name} volume`} aria-valuetext={`${Math.round(layer.volume * 100)}%`}
-            type="range" min="0" max="1" step=".01" disabled={studio.locked} value={layer.volume}
-            onChange={event => studio.setLayerVolume(layer.id, Number(event.target.value))} />
+          <StudioVolumeSlider label={`${layer.name} volume`} disabled={studio.locked} value={layer.volume}
+            onChange={value => studio.setLayerVolume(layer.id, value)} />
         </label>
         <button className="studio-layer-trim" type="button" aria-expanded={trimOpen} aria-controls={trimId}
           onClick={() => setTrimOpen(open => !open)}>
@@ -74,7 +74,8 @@ export function LayerOptions({ id, layer, studio, span, onRetake, cueing, onTogg
         </LayerIconButton>
         {layer.recorded && <>
           <LayerIconButton label={`Record another take for ${layer.name}`} hint="Record another take"
-            disabled={disabled || !!studio.candidate} onClick={() => onRetake(layer.id)}>
+            disabled={disabled || !!studio.candidate} onPointerDown={event => event.preventDefault()}
+            onClick={event => onRetake(layer.id, event.detail === 0)}>
             <Mic aria-hidden="true" />
           </LayerIconButton>
           <LayerIconButton label={`Download ${layer.name} original audio`} hint="Download original audio" onClick={() => studio.download(layer)}>

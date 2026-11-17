@@ -175,7 +175,12 @@ function BeatSettings({ studio, layerId, onLayerChange }: { studio: Studio; laye
   </details>;
 }
 
-function TakeReview({ studio, take, onDiscard, onRetry }: { studio: Studio; take: Layer; onDiscard: () => void; onRetry: () => void }) {
+function TakeReview({ studio, take, onDiscard, onRetry }: {
+  studio: Studio;
+  take: Layer;
+  onDiscard: (moveFocus: boolean) => void;
+  onRetry: (moveFocus: boolean) => void;
+}) {
   const playingTake = studio.playing && studio.previewCandidate;
   const soloPlaying = playingTake && studio.soloId === take.id;
   const mixPlaying = playingTake && studio.soloId === null;
@@ -198,10 +203,10 @@ function TakeReview({ studio, take, onDiscard, onRetry }: { studio: Studio; take
       </button>}
     </div>
     <div className="studio-take-actions" role="group" aria-label="Take actions">
-      <button className="studio-toolbar-button" type="button" disabled={studio.busy} onClick={onRetry}>
+      <button className="studio-toolbar-button" type="button" disabled={studio.busy} onClick={event => onRetry(event.detail === 0)}>
         <RotateCcw size={14} aria-hidden="true" />New take
       </button>
-      {studio.canDiscardTake && <button className="studio-toolbar-button studio-discard-take" type="button" disabled={studio.busy} onClick={onDiscard}>
+      {studio.canDiscardTake && <button className="studio-toolbar-button studio-discard-take" type="button" disabled={studio.busy} onClick={event => onDiscard(event.detail === 0)}>
         <Trash2 size={14} aria-hidden="true" />Discard take
       </button>}
       <button className="studio-toolbar-button studio-take-download" type="button" aria-label="Download take audio"
@@ -221,7 +226,7 @@ type CapturePanelProps = {
   open: boolean | null;
   onOpenChange: (open: boolean) => void;
   onCapture: () => void;
-  onDiscard: () => void;
+  onDiscard: (moveFocus: boolean) => void;
   detached?: boolean;
 };
 
@@ -281,13 +286,13 @@ export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpe
           <CaptureSwitch label="Beat" name="Beat during take" description="Shows a pulse on screen to help you stay in time while recording." icon={Activity}
             checked={beatOn} disabled={studio.busy} onToggle={() => studio.setMetronomeMode(beatOn ? 'off' : 'visual')} />
         </div>}
-        {setup && studio.candidate && <button className="studio-toolbar-button" type="button" disabled={studio.busy} onClick={() => {
+        {setup && studio.candidate && <button className="studio-toolbar-button" type="button" disabled={studio.busy} onClick={event => {
           studio.returnToTake();
-          recordButton.current?.focus({ preventScroll: true });
+          if (event.detail === 0) recordButton.current?.focus({ preventScroll: true });
         }}><ArrowLeft size={14} aria-hidden="true" />Back to take</button>}
-        {retaking && <button className="studio-toolbar-button studio-cancel-retake" type="button" disabled={studio.busy} onClick={() => {
+        {retaking && <button className="studio-toolbar-button studio-cancel-retake" type="button" disabled={studio.busy} onClick={event => {
           studio.cancelRetake();
-          recordButton.current?.focus({ preventScroll: true });
+          if (event.detail === 0) recordButton.current?.focus({ preventScroll: true });
         }}><X size={15} aria-hidden="true" />Cancel retake</button>}
       </div>}
     </div>
@@ -316,9 +321,9 @@ export function StudioCapturePanel({ studio, panelRef, recordButton, open, onOpe
           </div>
           <MicrophoneInput studio={studio} recording />
         </>}
-        {take && <TakeReview studio={studio} take={take} onDiscard={onDiscard} onRetry={() => {
+        {take && <TakeReview studio={studio} take={take} onDiscard={onDiscard} onRetry={moveFocus => {
           studio.recordAnother();
-          recordButton.current?.focus({ preventScroll: true });
+          if (moveFocus) recordButton.current?.focus({ preventScroll: true });
         }} />}
       </div>
     </div>
