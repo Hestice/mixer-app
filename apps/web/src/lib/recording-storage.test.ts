@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readRecording, recordingBlob, RecordingReadError, storeRecordingContent, restoreRecordingContent, replaceLayerAudio } from './recording-storage';
+import { readRecording, recordingBlob, RecordingReadError, storeRecordingContent, restoreRecordingContent, replaceLayerAudio, SONG_AUDIO_STORE } from './recording-storage';
 import { saveSong, getSong, readLocal, openDatabase, openLocalSong, type SongContent } from './song-store';
 import { encodeWav } from './wav';
 import { makeManifest, recoverLayerAudio } from './cloud-manifest';
@@ -17,12 +17,16 @@ test('new saves store independent audio bytes for kept takes and review takes an
  const id=crypto.randomUUID();await saveSong(id,0,content);
  const raw=await readLocal<any>('songs',id);
  assert.equal(raw.layers[0].blob,undefined);assert.equal(raw.layers[0].takes[0].blob,undefined);
- assert.ok(raw.layers[0].audioBytes instanceof ArrayBuffer);assert.ok(raw.candidate.audioBytes instanceof ArrayBuffer);
+ assert.equal(raw.layers[0].audioBytes,undefined);assert.equal(raw.candidate.audioBytes,undefined);
+ assert.equal(raw.layers[0].audioId,raw.candidate.audioId);
+ const media=await readLocal<{audioBytes:ArrayBuffer}>(SONG_AUDIO_STORE,[id,raw.layers[0].audioId]);
+ assert.deepEqual(media.audioBytes,await content.layers[0].blob!.arrayBuffer());
  const song=(await getSong(id))!;
  assert.deepEqual(await song.layers[0].blob!.arrayBuffer(),await content.layers[0].blob!.arrayBuffer());
  assert.deepEqual(await song.candidate!.takes![0].blob!.arrayBuffer(),await content.candidate.blob!.arrayBuffer());
  assert.equal(song.layers[0].trimStart,.2);assert.equal(song.layers[0].startAt,4);
  assert.equal('audioBytes' in song.layers[0],false,'storage details cannot leak into the cloud manifest');
+ assert.equal('audioId' in song.layers[0],false,'storage details cannot leak into the cloud manifest');
 });
 test('a lost browser Blob backing file cannot invalidate previously persisted bytes',async()=>{
  const content=fixture();const source=content.layers[0].blob!;
@@ -69,6 +73,47 @@ async function seedLegacy(content: SongContent, ownerId?: string) {
   } finally { db.close(); }
 }
 
+test('songs with inline audio remain readable and move to separate records on the next save', async () => {
+  const content = fixture();
+  const inline = await storeRecordingContent(content);
+  const id = await seedLegacy(inline);
+  const { song } = await openLocalSong(id);
+  assert.ok(song);
+  assert.deepEqual(await song.layers[0].blob!.arrayBuffer(), await content.layers[0].blob!.arrayBuffer());
+  await saveSong(id, song.revision, song);
+  const saved = await readLocal<{ layers: { audioId: string; audioBytes?: ArrayBuffer }[] }>('songs', id);
+  assert.equal(saved.layers[0].audioBytes, undefined);
+  const media = await readLocal<{ audioBytes: ArrayBuffer }>(SONG_AUDIO_STORE, [id, saved.layers[0].audioId]);
+  assert.deepEqual(media.audioBytes, await content.layers[0].blob!.arrayBuffer());
+});
+
+test('a failed metadata write rolls back every new stem while leaving the previous revision playable', async () => {
+  const id = crypto.randomUUID();
+  const content = fixture();
+  await saveSong(id, 0, content);
+  const layers = ['Vocals', 'Drums', 'Bass', 'Other instruments'].map((name, index) => ({
+    ...content.layers[0], id: name, name, takes: undefined,
+    blob: encodeWav(Float32Array.of(index / 4), 44100),
+  }));
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (value, key) {
+    if (this.name === 'songs') throw new DOMException('Full', 'QuotaExceededError');
+    return put.call(this, value, key);
+  };
+  try {
+    await assert.rejects(saveSong(id, 1, { ...content, layers }), { name: 'QuotaExceededError' });
+  } finally { IDBObjectStore.prototype.put = put; }
+  const media = await readLocal<{ songId: string }[]>(SONG_AUDIO_STORE);
+  assert.equal(media.filter(record => record.songId === id).length, 1);
+  const saved = await getSong(id);
+  assert.equal(saved?.revision, 1);
+  assert.deepEqual(await saved.layers[0].blob!.arrayBuffer(), await content.layers[0].blob!.arrayBuffer());
+  const next = await saveSong(id, 1, { ...content, layers });
+  const splitMedia = await readLocal<{ songId: string }[]>(SONG_AUDIO_STORE);
+  assert.equal(splitMedia.filter(record => record.songId === id).length, 4);
+  assert.deepEqual((await getSong(id))?.layers.map(layer => layer.name), next.layers.map(layer => layer.name));
+});
+
 test('opening a legacy song protects audio immediately without changing its revision, trims or owner', async () => {
   const content = fixture(), owner = crypto.randomUUID();
   const id = await seedLegacy(content, owner);
@@ -80,7 +125,8 @@ test('opening a legacy song protects audio immediately without changing its revi
   assert.equal(song?.layers[0].startAt, 4); assert.equal(song?.layers[0].trimStart, .2);
   const raw = await readLocal<any>('songs', id);
   assert.equal(raw.layers[0].blob, undefined);
-  assert.deepEqual(raw.layers[0].audioBytes, await content.layers[0].blob!.arrayBuffer());
+  const media = await readLocal<{ audioBytes: ArrayBuffer }>(SONG_AUDIO_STORE, [id, raw.layers[0].audioId]);
+  assert.deepEqual(media.audioBytes, await content.layers[0].blob!.arrayBuffer());
 });
 
 test('a readable duplicate recovers the same take when the layer Blob is unavailable', async () => {

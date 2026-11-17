@@ -1,11 +1,14 @@
 import type { Layer, RecordingTake } from './session';
 import type { SavedSong, SongContent } from './song-store';
 
-interface StoredAudio { audioBytes?: ArrayBuffer; audioType?: string; blob?: Blob }
+interface StoredAudio { audioBytes?: ArrayBuffer; audioId?: string; audioType?: string; blob?: Blob }
 type StoredTake = Omit<RecordingTake, 'blob'> & StoredAudio;
 type StoredLayer = Omit<Layer, 'blob' | 'takes'> & StoredAudio & { takes?: StoredTake[] };
 export type StoredSong = Omit<SavedSong, 'layers' | 'candidate'> & { layers: StoredLayer[]; candidate: StoredLayer | null };
 const bytes = new WeakMap<Blob, Promise<ArrayBuffer>>();
+const audioIds = new WeakMap<ArrayBuffer, string>();
+export const SONG_AUDIO_STORE = 'song-audio';
+type SongAudio = { songId: string; audioId: string; audioBytes: ArrayBuffer };
 export const MAX_BACKUP_AUDIO_BYTES = 50 * 1024 * 1024;
 
 export class RecordingReadError extends Error {
@@ -74,16 +77,65 @@ export async function storeRecordingContent<T extends SongContent>(song: T) {
 
 export function hasLegacyRecordings(song: StoredSong) {
   return [...song.layers, ...(song.candidate ? [song.candidate] : [])].some(layer =>
-    ((layer.recorded || layer.blob) && !layer.audioBytes?.byteLength) || layer.takes?.some(take => !take.audioBytes?.byteLength));
+    ((layer.recorded || layer.blob) && !layer.audioId && !layer.audioBytes?.byteLength) ||
+    layer.takes?.some(take => !take.audioId && !take.audioBytes?.byteLength));
 }
 
-export function restoreRecordingContent(song: StoredSong): SavedSong {
+export function recordingReferences(song?: StoredSong) {
+  const ids = new Set<string>();
+  if (!song) return ids;
+  for (const layer of [...song.layers, ...(song.candidate ? [song.candidate] : [])]) {
+    if (layer.audioId) ids.add(layer.audioId);
+    for (const take of layer.takes ?? []) if (take.audioId) ids.add(take.audioId);
+  }
+  return ids;
+}
+
+// Keep each take below the IndexedDB record size limit even when the song contains many takes.
+// The metadata and audio share a transaction so readers only see complete revisions.
+export function writeSongRecord(transaction: IDBTransaction, song: StoredSong, previous?: StoredSong) {
+  const recordings = transaction.objectStore(SONG_AUDIO_STORE);
+  const previousIds = recordingReferences(previous);
+  const nextIds = new Set<string>();
+  function separate<T extends StoredAudio>({ audioBytes, ...rest }: T) {
+    if (!audioBytes) return rest;
+    let audioId = audioIds.get(audioBytes);
+    if (!audioId) { audioId = crypto.randomUUID(); audioIds.set(audioBytes, audioId); }
+    if (!previousIds.has(audioId) && !nextIds.has(audioId)) recordings.put({ songId: song.id, audioId, audioBytes } satisfies SongAudio);
+    nextIds.add(audioId);
+    return { ...rest, audioId };
+  }
+  function layer({ takes, ...value }: StoredLayer): StoredLayer {
+    return { ...separate(value), ...(takes ? { takes: takes.map(separate) } : {}) };
+  }
+  transaction.objectStore('songs').put({ ...song, layers: song.layers.map(layer), candidate: song.candidate ? layer(song.candidate) : null });
+  for (const id of previousIds) if (!nextIds.has(id)) recordings.delete([song.id, id]);
+}
+
+export function readSongAudio(transaction: IDBTransaction, song: StoredSong) {
+  const audio = new Map<string, ArrayBuffer>();
+  const recordings = transaction.objectStore(SONG_AUDIO_STORE);
+  for (const id of recordingReferences(song)) {
+    const request = recordings.get([song.id, id]);
+    request.onsuccess = () => {
+      const record = request.result as SongAudio | undefined;
+      if (record) audio.set(id, record.audioBytes);
+    };
+  }
+  return audio;
+}
+
+export function restoreRecordingContent(song: StoredSong, recordings?: Map<string, ArrayBuffer>): SavedSong {
   const restored = new WeakMap<ArrayBuffer, Blob>();
   function audio<T extends StoredAudio>(value: T) {
-    const { audioBytes, audioType, ...rest } = value;
-    if (!audioBytes?.byteLength) return rest;
-    let blob = restored.get(audioBytes);
-    if (!blob) { blob = recordingBlob(audioBytes, audioType); restored.set(audioBytes, blob); }
+    const { audioBytes, audioId, audioType, ...rest } = value;
+    const data = audioId ? recordings?.get(audioId) : audioBytes;
+    if (!data?.byteLength) return rest;
+    let blob = restored.get(data);
+    if (!blob) {
+      if (audioId) audioIds.set(data, audioId);
+      restored.set(data, blob = recordingBlob(data, audioType));
+    }
     return { ...rest, blob };
   }
   function layer(value: StoredLayer): Layer {

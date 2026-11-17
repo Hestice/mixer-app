@@ -1,4 +1,4 @@
-import { storeRecordingContent, restoreRecordingContent, hasLegacyRecordings, RecordingReadError, type StoredSong } from './recording-storage';
+import { storeRecordingContent, restoreRecordingContent, hasLegacyRecordings, readSongAudio, writeSongRecord, SONG_AUDIO_STORE, RecordingReadError, type StoredSong } from './recording-storage';
 import type { RecordArt } from './record-art';
 import type { BackupLink } from './backup-store';
 import { libraryEdit, lifecycle, type LibraryAction, type Lifecycle } from './library-entry';
@@ -53,10 +53,13 @@ export function storageMessage(reason: unknown) {
 export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let blocked = false;
-    const request = indexedDB.open('listening-room', 3);
+    const request = indexedDB.open('listening-room', 4);
     request.onupgradeneeded = () => {
       for (const name of ['songs', 'summaries', 'backups', 'settings']) {
         if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name, { keyPath: 'id' });
+      }
+      if (!request.result.objectStoreNames.contains(SONG_AUDIO_STORE)) {
+        request.result.createObjectStore(SONG_AUDIO_STORE, { keyPath: ['songId', 'audioId'] });
       }
     };
     request.onerror = () => reject(request.error);
@@ -70,7 +73,7 @@ export function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export async function readLocal<T>(store: string, key?: string): Promise<T> {
+export async function readLocal<T>(store: string, key?: IDBValidKey): Promise<T> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(store, 'readonly');
@@ -81,18 +84,30 @@ export async function readLocal<T>(store: string, key?: string): Promise<T> {
 }
 
 export async function getSong(id: string) {
-  const song = await readLocal<StoredSong | undefined>('songs', id);
-  return song ? restoreRecordingContent(song) : undefined;
+  const { raw, audio } = await readSongRecord(id);
+  return raw ? restoreRecordingContent(raw, audio) : undefined;
+}
+
+async function readSongRecord(id: string) {
+  const db = await openDatabase();
+  return new Promise<{ raw?: StoredSong; audio?: Map<string, ArrayBuffer> }>((resolve, reject) => {
+    const tx = db.transaction(['songs', SONG_AUDIO_STORE], 'readonly');
+    const request = tx.objectStore('songs').get(id);
+    let audio: Map<string, ArrayBuffer> | undefined;
+    request.onsuccess = () => { if (request.result) audio = readSongAudio(tx, request.result as StoredSong); };
+    tx.oncomplete = () => { db.close(); resolve({ raw: request.result as StoredSong | undefined, audio }); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
+  });
 }
 /** Protect old recordings before waveform decoding or any further edits. This is a storage change, not a song revision. */
 export async function openLocalSong(id: string, ownerId?: string, allowInactive = false): Promise<{ song?: SavedSong; audioError?: RecordingReadError; protectionError?: unknown; ownerMismatch?: boolean; unavailable?: 'archived' | 'deleted' }> {
   for (;;) {
-    const raw = await readLocal<StoredSong | undefined>('songs', id);
+    const { raw, audio } = await readSongRecord(id);
     if (!raw) return {};
     if (raw.ownerId && raw.ownerId !== ownerId) return { ownerMismatch: true };
     const state = lifecycle(raw);
     if (!allowInactive && state !== 'active') return { unavailable: state };
-    const song = restoreRecordingContent(raw);
+    const song = restoreRecordingContent(raw, audio);
     if (!hasLegacyRecordings(raw)) return { song };
     let protectedSong: StoredSong;
     try { protectedSong = await storeRecordingContent(song); }
@@ -101,7 +116,7 @@ export async function openLocalSong(id: string, ownerId?: string, allowInactive 
     try {
       const db = await openDatabase();
       const promoted = await new Promise<boolean>((resolve, reject) => {
-        const tx = db.transaction('songs', 'readwrite');
+        const tx = db.transaction(['songs', SONG_AUDIO_STORE], 'readwrite');
         const store = tx.objectStore('songs');
         const request = store.get(id);
         let unchanged = false;
@@ -109,7 +124,7 @@ export async function openLocalSong(id: string, ownerId?: string, allowInactive 
         request.onsuccess = () => {
           const current = request.result as StoredSong | undefined;
           unchanged = !!current && current.revision === raw.revision && current.ownerId === raw.ownerId;
-          try { if (unchanged && current && hasLegacyRecordings(current)) store.put(protectedSong); }
+          try { if (unchanged && current && hasLegacyRecordings(current)) writeSongRecord(tx, protectedSong, current); }
           catch (reason) { failure = reason; tx.abort(); }
         };
         tx.oncomplete = () => { db.close(); resolve(unchanged); };
@@ -173,20 +188,20 @@ export async function saveSong(id: string, revision: number, content: SongConten
   const stored = await storeRecordingContent(content);
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(['songs', 'summaries'], 'readwrite');
+    const transaction = db.transaction(['songs', 'summaries', SONG_AUDIO_STORE], 'readwrite');
     let saved: SavedSong;
     let failure: unknown;
     const store = transaction.objectStore('songs');
     const request = store.get(id);
     request.onsuccess = () => {
-      const previous = request.result as SavedSong | undefined;
+      const previous = request.result as StoredSong | undefined;
       if ((previous?.revision ?? 0) !== revision || previous && lifecycle(previous) !== 'active') {
         failure = new SongConflictError(); transaction.abort(); return;
       }
       try {
         const now = Date.now();
         saved = { ...content, archivedAt: previous?.archivedAt, deletedAt: previous?.deletedAt, ownerId: previous ? previous.ownerId : creationOwner, id, revision: revision + 1, createdAt: previous?.createdAt ?? now, updatedAt: now };
-        store.put({ ...saved, layers: stored.layers, candidate: stored.candidate });
+        writeSongRecord(transaction, { ...saved, layers: stored.layers, candidate: stored.candidate }, previous);
         const summary = summarizeSong(saved);
         transaction.objectStore('summaries').put(summary);
       } catch (reason) { failure = reason; transaction.abort(); }
