@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Archive, AudioLines, Disc3, Mic } from 'lucide-react';
+import { Archive, ArrowRight, AudioLines, Disc3, Mic } from 'lucide-react';
 import type { StudioDeckControls } from '../hooks/use-studio-deck-controls';
 import { useTurntableMotion } from '../hooks/use-turntable-motion';
+import type { DeckPosition } from '../lib/studio-layout';
 import { Check, Download, Plus, X } from './icons';
 import { RecordCustomizer } from './record-customizer';
 import { SongTimeline } from './song-timeline';
@@ -54,18 +55,25 @@ export function TurntablePanel({ deck }: { deck: StudioDeckControls }) {
   </div>;
 }
 
-export function TimelinePanel({ deck, detached = false }: { deck: StudioDeckControls; detached?: boolean }) {
+export function TimelinePanel({ deck, detached = false, recorderGuide }: {
+  deck: StudioDeckControls;
+  detached?: boolean;
+  recorderGuide?: { direction: DeckPosition; stackedDirection: 'top' | 'bottom' };
+}) {
   const { studio } = deck;
+  const canStartRecording = !studio.split && (studio.recordingState === 'idle' || studio.recordingState === 'ready');
   return <SongTimeline studio={studio} span={deck.span} onRetake={deck.retakeLayer}
     cueing={deck.cueing} onToggleMix={() => void deck.toggleTransport({ keptMix: true })}
     detached={detached} onStop={deck.stopTransport}>
     {!studio.layers.length && !studio.candidate && <div className="studio-empty">
       {!studio.retakeLayerId && <SongImport studio={studio} />}
-      <div className="studio-empty-record">
-        <h2>Start with a small idea.</h2>
-        <p>A chord progression or a melody.</p>
-        <button className="button button-dark" disabled={studio.locked || studio.busy} onClick={event => deck.addLayer(event.detail === 0)}><Mic size={17} aria-hidden="true" />Record your first layer</button>
-      </div>
+      {recorderGuide && canStartRecording && <p className="studio-recorder-guide" data-direction={recorderGuide.direction}
+        data-stacked-direction={recorderGuide.stackedDirection}>
+        <span>{studio.recordingState === 'ready'
+          ? <>Press <strong>Record layer</strong> in the Recorder to start your first take.</>
+          : <>Use the Recorder to <strong>connect your microphone</strong> and start your first take.</>}</span>
+        <ArrowRight size={23} aria-hidden="true" />
+      </p>}
     </div>}
     {!!studio.archivedLayers.length && <details className="layer-archive">
       <summary><Archive size={14} aria-hidden="true" /> Archived layers <span>{studio.archivedLayers.length}</span></summary>
