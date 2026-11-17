@@ -56,7 +56,7 @@ export function SongImport({ studio }: { studio: Studio }) {
         <ArrowDownToLine className="studio-import-icon" size={16} aria-hidden="true" />
       </button>}
     </div>
-    {split ? <p>This can take several minutes. Keep this tab open.</p> : <p>Get separate vocals, drums, bass, and instruments.</p>}
+    {split ? <p>Splitting on this device. Keep this tab open.</p> : <p>Get separate vocals, drums, bass, and instruments.</p>}
     {(dropError || studio.splitError) && <p className="studio-import-error" role="alert">{dropError || studio.splitError}</p>}
   </div>;
 }
