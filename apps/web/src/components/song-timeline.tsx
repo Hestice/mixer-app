@@ -15,7 +15,7 @@ export function preciseTime(seconds: number) {
 type TimelineProps = {
   studio: Studio;
   span: number;
-  onRetake: (id: string) => void;
+  onRetake: (id: string, moveFocus: boolean) => void;
   cueing: boolean;
   onToggleMix: () => void;
   detached: boolean;

@@ -11,7 +11,7 @@ export function useStudioDeckControls(studio: Studio) {
   const [cueing, setCueing] = useState(false);
   const cuePending = useRef(false);
   const turntable = useRef<TurntableCue | null>(null);
-  const recorder = useRef<(() => void) | null>(null);
+  const recorder = useRef<((moveFocus: boolean) => void) | null>(null);
   const state = studio.recordingState;
   const duration = Math.max(0, ...studio.layers.map(layer => clipBounds(layer).end));
   const span = Math.max(16, duration + 4, studio.candidate ? clipBounds(studio.candidate).end + 4 : 0,
@@ -22,9 +22,9 @@ export function useStudioDeckControls(studio: Studio) {
     return () => { if (turntable.current === cue) turntable.current = null; };
   }, []);
 
-  const registerRecorder = useCallback((focus: () => void) => {
-    recorder.current = focus;
-    return () => { if (recorder.current === focus) recorder.current = null; };
+  const registerRecorder = useCallback((reveal: (moveFocus: boolean) => void) => {
+    recorder.current = reveal;
+    return () => { if (recorder.current === reveal) recorder.current = null; };
   }, []);
 
   async function toggleTransport({ keptMix = false, instant = false } = {}) {
@@ -57,8 +57,8 @@ export function useStudioDeckControls(studio: Studio) {
     turntable.current?.stop();
   }
 
-  function revealRecording() {
-    recorder.current?.();
+  function revealRecording(moveFocus = true) {
+    recorder.current?.(moveFocus);
   }
 
   function capture() {
@@ -79,21 +79,21 @@ export function useStudioDeckControls(studio: Studio) {
     }
   }
 
-  function discardTake() {
+  function discardTake(moveFocus: boolean) {
     if (!studio.discardTake()) return;
     setNotice('Take discarded. Undo brings it back.');
-    revealRecording();
+    revealRecording(moveFocus);
   }
 
-  function retakeLayer(id: string) {
+  function retakeLayer(id: string, moveFocus: boolean) {
     setCaptureOptions(true);
     setNotice('');
     studio.recordAnother(id);
-    revealRecording();
+    revealRecording(moveFocus);
   }
 
-  function addLayer() {
-    revealRecording();
+  function addLayer(moveFocus: boolean) {
+    revealRecording(moveFocus);
     if (state === 'idle') capture();
     else setCaptureOptions(true);
   }
