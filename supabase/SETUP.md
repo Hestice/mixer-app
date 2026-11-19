@@ -2,6 +2,8 @@
 
 Project: `tkpaivoalqyvjqfocpwe` (mixer-app).
 
+For browser usage events and return-visit reports, apply the separate migration and follow [Usage tracking](./USAGE_TRACKING.md).
+
 ## Local configuration
 
 Copy `apps/web/.env.example` to `apps/web/.env.local` and fill in the project's URL and publishable key. The local file is ignored by Git. No service-role key or database password belongs in the browser app.

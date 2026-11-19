@@ -19,6 +19,7 @@ import { useCloud } from '../components/cloud-provider';
 import { getBackupPreference } from '../lib/backup-store';
 import { getSong, openLocalSong, SongWriter, storageMessage, type SongContent } from '../lib/song-store';
 import { splitAudioFile } from '../lib/song-separation';
+import { trackUsage } from '../lib/usage-tracking';
 
 export type RecordingState = 'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'processing' | 'review';
 
@@ -151,6 +152,7 @@ export function useStudio(startInWorkspace = false) {
         url.searchParams.set('song', nextId);
         window.history.replaceState(window.history.state, '', url);
         setLocalReady(true);
+        trackUsage('studio_opened', { surface: 'studio', layer_count: layers.length });
       })();
     } else {
       void openLocalSong(id, cloud.user?.id).then(({ song, audioError, protectionError, ownerMismatch, unavailable }) => {
@@ -169,6 +171,8 @@ export function useStudio(startInWorkspace = false) {
         setMetronomeMode(song.metronomeMode === 'sound' ? 'visual' : song.metronomeMode);
         setRecordingState(song.candidate ? 'review' : 'idle'); setPreviewCandidate(false);
         getEngine().configureSession(song.layers.filter(layer => lifecycle(layer) === 'active'));
+        trackUsage('studio_opened', { surface: 'studio', layer_count: song.layers.filter(layer => lifecycle(layer) === 'active').length });
+        if (song.layers.length || song.candidate) trackUsage('song_reopened', { surface: 'studio' });
         restoredContent.current = true;
         setLocalReady(true);
       }).catch(() => { if (!canceled) setLoadError('Your songs could not be opened. Check that browser storage is available, then reload to try again.'); });
@@ -550,6 +554,8 @@ export function useStudio(startInWorkspace = false) {
     if (workspace) beginEdit();
     const next = retakeLayerId ? savedLayers.map((layer) => layer.id === retakeLayerId ? { ...candidate, id: layer.id, enabled: layer.enabled, volume: layer.volume, color: layer.color } : layer) : commitLayer(savedLayers, candidate);
     if (workspace) { getEngine().configureSession(next.filter(layer => lifecycle(layer) === 'active'), getEngine().position); setPlaying(false); }
+    trackUsage('take_kept', { surface: workspace ? 'studio' : 'landing', layer_count: next.filter(layer => lifecycle(layer) === 'active').length, is_retake: !!retakeLayerId });
+    if (!retakeLayerId && next.length > savedLayers.length) trackUsage('layer_added', { surface: workspace ? 'studio' : 'landing', layer_count: next.filter(layer => lifecycle(layer) === 'active').length });
     setLayers(next); setCandidate(null); setRetakeLayerId(undefined); setSoloId(null); setPreviewCandidate(false);
     setRecordingState(recorderRef.current ? 'ready' : 'idle');
     if (workspace) {
@@ -576,6 +582,7 @@ export function useStudio(startInWorkspace = false) {
 
   function discardTake() {
     if (!candidate || candidate === nextDraft || locked || busy) return false;
+    trackUsage('take_discarded', { surface: workspace ? 'studio' : 'landing', is_retake: !!retakeLayerId });
     replaceDraft(nextDraft);
     return true;
   }
@@ -811,6 +818,7 @@ export function useStudio(startInWorkspace = false) {
       decodedRecordings.current.delete(next.id);
       editHistory.current = []; setUndoCount(0);
       setCandidate(next); setPreviewCandidate(true); setSoloId(null); setRecordingState('review');
+      trackUsage('recording_completed', { surface: workspace ? 'studio' : 'landing', layer_count: layers.length, is_retake: !!retakeLayerId });
     } catch (reason) {
       if (!disposed.current && run === runRef.current) {
         if (!receivedAudio) releaseMicrophone();
@@ -853,6 +861,7 @@ export function useStudio(startInWorkspace = false) {
       metronomeRef.current.start(beatAt, tempo, canSoundClick(metronomeMode, headphones));
       if (metronomeMode !== 'off') startVisualBeat(context, beatAt, beatSeconds);
       let lastPeakAt = startAt - .08;
+      let trackedRecording = false;
       const update = () => {
         const time = context.currentTime;
         const seconds = time - startAt;
@@ -860,6 +869,10 @@ export function useStudio(startInWorkspace = false) {
           const beat = metronomeBeatAt(time, beatAt, beatSeconds);
           setCountdown(countIn && beat >= 0 ? Math.max(0, 4 - beat) : 0);
         } else {
+          if (!trackedRecording) {
+            trackedRecording = true;
+            trackUsage('recording_started', { surface: workspace ? 'studio' : 'landing', layer_count: layers.length, is_retake: !!retakeLayerId });
+          }
           setRecordingState('recording'); setCountdown(0); setElapsed(seconds); setPosition(position + seconds);
           if (time - lastPeakAt >= .075) {
             lastPeakAt = time;
