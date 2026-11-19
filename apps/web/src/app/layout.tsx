@@ -9,10 +9,12 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const usageEnabled = process.env.NEXT_PUBLIC_USAGE_TRACKING === 'true'
+    || (process.env.VERCEL_ENV === 'production' && process.env.NEXT_PUBLIC_USAGE_TRACKING !== 'false');
   return <html lang="en">
     <head>
       <link rel="stylesheet" crossOrigin="anonymous" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700&display=swap" />
     </head>
-    <body><CloudProvider><RecordTransitionProvider>{children}</RecordTransitionProvider></CloudProvider></body>
+    <body><CloudProvider usageEnabled={usageEnabled}><RecordTransitionProvider>{children}</RecordTransitionProvider></CloudProvider></body>
   </html>;
 }

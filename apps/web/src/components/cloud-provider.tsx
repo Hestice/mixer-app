@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { panelPath } from '../lib/studio-layout';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
+import { UsageTracking } from './usage-tracking';
 import { listSongs } from '../lib/song-store';
 import { cacheCloudLibrary, getBackup, enableBackup, listBackups, getBackupPreference, setBackupPreference, removeDownloadedCopies, type BackupLink } from '../lib/backup-store';
 import { syncSong, openCloudSong, updateCloudSong, SyncCanceledError } from '../lib/cloud-sync';
@@ -193,14 +194,17 @@ function useCloudState() {
 
 type CloudState = ReturnType<typeof useCloudState>;
 const CloudContext = createContext<CloudState | null>(null);
-export function CloudProvider({ children }: { children: ReactNode }) {
+export function CloudProvider({ children, usageEnabled = false }: { children: ReactNode; usageEnabled?: boolean }) {
   const pathname = usePathname();
   if (pathname === panelPath) return children;
-  return <CloudSessionProvider>{children}</CloudSessionProvider>;
+  return <CloudSessionProvider usageEnabled={usageEnabled}>{children}</CloudSessionProvider>;
 }
-function CloudSessionProvider({ children }: { children: ReactNode }) {
+function CloudSessionProvider({ children, usageEnabled }: { children: ReactNode; usageEnabled: boolean }) {
   const value = useCloudState();
-  return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>;
+  return <CloudContext.Provider value={value}>
+    <UsageTracking enabled={usageEnabled} signedIn={!!value.user} />
+    {children}
+  </CloudContext.Provider>;
 }
 export function useCloud() {
   const value = useContext(CloudContext);
