@@ -53,9 +53,11 @@ export function useStudio(startInWorkspace = false) {
   const playbackRequest = useRef(0);
   const startingPlayback = useRef(false);
   const [busy, setBusy] = useState(false);
-  const [split, setSplit] = useState<{ fileName: string; progress: number | null } | null>(null);
+  const [split, setSplit] = useState<{ fileName: string; progress: number | null; startedAt: number; saving?: boolean } | null>(null);
   const [splitError, setSplitError] = useState('');
   const splitRun = useRef<AbortController | null>(null);
+  const savingSplit = useRef(false);
+  const [splitResult, setSplitResult] = useState<{ id: string; title: string; layerCount: number } | null>(null);
   const [error, setError] = useState('');
   const [exportStatus, setExportStatus] = useState('');
   const [exportBusy, setExportBusy] = useState(false);
@@ -294,7 +296,7 @@ export function useStudio(startInWorkspace = false) {
   }, []);
 
   useEffect(() => {
-    if (!workspace || (!split && saveState === 'saved' && !['countdown', 'recording', 'processing'].includes(recordingState))) return;
+    if ((!workspace && !split) || (!split && saveState === 'saved' && !['countdown', 'recording', 'processing'].includes(recordingState))) return;
     const warn = (event: BeforeUnloadEvent) => {
       if (splitRun.current || persistedContent.current !== contentRef.current || ['countdown', 'recording', 'processing'].includes(recordingState)) event.preventDefault();
     };
@@ -471,28 +473,42 @@ export function useStudio(startInWorkspace = false) {
   }
 
   async function importSong(file: File) {
-    if (!workspace || locked || busy || layers.length || candidate || retakeLayerId || splitRun.current) return;
+    if (locked || busy || splitRun.current || (workspace && (layers.length || candidate || retakeLayerId))) return;
     stopMetronome();
+    getEngine().pause(); setPlaying(false);
     const run = new AbortController();
+    const startedAt = Date.now();
     splitRun.current = run;
     setBusy(true);
-    setSplitError('');
-    setSplit({ fileName: file.name, progress: null });
+    setSplitError(''); setSplitResult(null);
+    setSplit({ fileName: file.name, progress: null, startedAt });
     try {
-      const stems = await splitAudioFile(file, run.signal, progress => setSplit({ fileName: file.name, progress }));
+      const stems = await splitAudioFile(file, run.signal, progress => setSplit({ fileName: file.name, progress, startedAt }));
       if (disposed.current || run.signal.aborted) return;
+      const importedTitle = file.name.replace(/\.[^.]+$/, '').trim().slice(0, 70) || 'Untitled song';
+      if (!workspace) {
+        // A background split gets its own saved song, never the demo's content or edits.
+        savingSplit.current = true;
+        setSplit({ fileName: file.name, progress: 1, startedAt, saving: true });
+        const id = crypto.randomUUID();
+        const owner = cloud.autoBackup ? cloud.user?.id : undefined;
+        const writer = new SongWriter(id, 0, owner);
+        try {
+          await writer.write({ ...contentRef.current, title: importedTitle, artwork: undefined,
+            layers: stems, candidate: null, retakeLayerId: undefined, withDemo: false, partName: 'Harmony' });
+        } catch { throw new Error('The separated layers could not be saved. Check free storage on this device, then split the file again.'); }
+        if (!disposed.current) setSplitResult({ id, title: importedTitle, layerCount: stems.length });
+        return;
+      }
       beginEdit();
-      const next = [...savedLayers, ...stems];
       getEngine().configureSession(stems);
-      setPosition(0);
-      setSoloId(null);
-      setLayers(next);
-      setTitle(current => current === 'Untitled song' ? file.name.replace(/\.[^.]+$/, '').trim().slice(0, 70) || current : current);
+      setPosition(0); setSoloId(null); setLayers([...savedLayers, ...stems]);
+      setTitle(current => current === 'Untitled song' ? importedTitle : current);
       setPartName(current => current === 'Guitar' ? 'Harmony' : current);
     } catch (reason) {
       if (!disposed.current && !run.signal.aborted) setSplitError(reason instanceof Error ? reason.message : 'This song couldn’t be split. Try another file.');
     } finally {
-      splitRun.current = null;
+      splitRun.current = null; savingSplit.current = false;
       if (!disposed.current) { setSplit(null); setBusy(false); }
     }
   }
@@ -1024,7 +1040,8 @@ export function useStudio(startInWorkspace = false) {
     songId, cloudStatus: cloud.status(songId, localRevision), cloudError: cloud.errors[songId], retryCloud: cloud.retry,
     title, setTitle, artwork, setArtwork, localReady: localReady && !accountBlocked, loadError: accountBlocked ? 'Sign in to the account that owns this song to reopen it. Your local recordings are still on this device.' : loadError, saveState, saveError, audioError, retrySave: () => persistSong(), openMySongs,
     layers, archivedLayers, candidate, retakeLayerId, playing, busy, error, workspace, withDemo, recordingState, countdown,
-    split, splitError, importSong, cancelSplit: () => splitRun.current?.abort(),
+    split, splitError, splitResult, importSong, clearSplitResult: () => setSplitResult(null),
+    cancelSplit: () => { if (!savingSplit.current) splitRun.current?.abort(); },
     elapsed, position, recordFrom, advanceClock, duration: engineRef.current?.duration ?? 80 / 7, inputLevel, volume, soloId,
     locked, hasRecordings, previewCandidate,
     togglePlayback, pausePlayback, stopPlayback, stopVersion, readSongPosition, seekSong, beginScrub, scrubSong, endScrub, toggleLayer, previewHarmony, toggleCandidatePreview, discardDemoPreview, keepCandidate, enterWorkspace, applyTourScene,
