@@ -102,7 +102,7 @@ export function useStoryScroll(story: RefObject<HTMLElement | null>, workspace: 
         scheduleSettle();
       };
       function ownsInput(target: EventTarget | null) {
-        return target instanceof Element && !target.closest('input, textarea, select, [contenteditable="true"], dialog[open]');
+        return target instanceof Element && !target.closest('input, textarea, select, [contenteditable="true"], dialog[open], [role="dialog"]');
       }
       function onWheel(event: WheelEvent) {
         if (event.ctrlKey || !ownsInput(event.target) || !event.deltaY) return;

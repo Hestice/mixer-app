@@ -5,6 +5,7 @@ import { ArrowDown, ArrowRight, Mic, X } from './icons';
 import { useStudio } from '../hooks/use-studio';
 import { chapterFromProgress, harmonyLayer, mixChapterFromProgress } from '../lib/session';
 import { STORY_STOPS, CHAPTER_STOPS, layerReveal, tourBuildStage } from '../lib/story-motion';
+import { SongSplitDialog } from './song-split-dialog';
 import { Deck } from './deck';
 import { LayerStrip } from './layer-strip';
 import { RecordingConsole } from './recording-console';
@@ -16,7 +17,7 @@ const chapters = [
   { label: 'One layer', title: 'Follow the sound out of the groove.', description: 'On vinyl, instruments are mixed together in the groove. Here, they unfold into separate audio layers.', next: 'Bring in other sounds' },
   { label: 'Build a song', title: 'Build the mix.', description: 'Keys join the guitar, then rhythm follows. Switch a layer off to hear what it adds to the mix.', next: 'Try a new layer' },
   { label: 'Try a layer', title: 'Try a part before you keep it.', description: 'Harmony joins on the right: a higher melody that fits the chords. Keep it or scroll to move it into your song, then add a part of your own.', next: 'Bring harmony into the song' },
-  { label: 'Your turn', title: 'Now bring your own sound.', description: 'All four layers are in the song. Sing or play a part over them, or start with an empty song.', next: '' },
+  { label: 'Your turn', title: 'Now bring your own sound.', description: 'All four layers are in the song. Record a part over them, or bring a song of your own.', next: '' },
 ];
 
 export function ListeningRoom() {
@@ -27,7 +28,8 @@ export function ListeningRoom() {
   const [keepingHarmony, setKeepingHarmony] = useState(false);
   const finishKeepingHarmony = useCallback(() => setKeepingHarmony(false), []);
   const keptFocus = useRef<{ id: string; source: Element | null } | null>(null);
-  const { progress, goToStop } = useStoryScroll(storyRef, studio.workspace);
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const { progress, goToStop } = useStoryScroll(storyRef, studio.workspace || splitDialogOpen);
   const chapter = chapterFromProgress(progress);
   const buildStage = tourBuildStage(progress);
   const mixChapter = mixChapterFromProgress(progress);
@@ -115,7 +117,12 @@ export function ListeningRoom() {
                 {chapter === 3 && !studio.workspace && <div className="candidate-slot">
                   {transferringHarmony ? <p role="status">Harmony is moving into your song.</p> : harmonyKept ? <p className="transfer-confirmation" role="status">Added to your song <span>Look for Harmony on the left.</span></p> : <><div className="layer-identity"><span className="layer-color harmony-color" /><span>Harmony<small>High melody / new layer</small></span></div>{studio.candidate ? <div className="candidate-decision"><button className="button button-dark" onClick={keepLayer} disabled={studio.busy}>Keep in my song <ArrowRight size={16} /></button><button className="text-button" onClick={studio.discardDemoPreview}>Remove this layer</button></div> : <p>Listen on the record above.</p>}</>}
                 </div>}
-                {!studio.workspace && chapter === 4 && <div className="record-entry"><button className="button button-record" disabled={studio.busy} onClick={() => enter(true)}><Mic size={18} />Record over this song <ArrowRight size={16} /></button><button className="text-button" disabled={studio.busy} onClick={() => enter(false)}>Start with an empty song</button></div>}
+                <div className="your-turn-choices" hidden={chapter !== 4}>
+                  <h2>Your turn</h2>
+                  <button className="button button-record" disabled={studio.busy} onClick={() => enter(true)}><Mic size={22} />Record over this song</button>
+                  <SongSplitDialog studio={studio} open={splitDialogOpen} onOpenChange={setSplitDialogOpen} showEntry={chapter === 4} />
+                  <button className="text-button" disabled={studio.busy} onClick={() => enter(false)}>Start with an empty song</button>
+                </div>
               </div>
             </>
           </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { RecordTransitionProvider } from '../components/record-transition';
+import { FileDropGuard } from '../components/file-drop-guard';
 import { CloudProvider } from '../components/cloud-provider';
 
 export const metadata: Metadata = {
@@ -15,6 +16,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <head>
       <link rel="stylesheet" crossOrigin="anonymous" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700&display=swap" />
     </head>
-    <body><CloudProvider usageEnabled={usageEnabled}><RecordTransitionProvider>{children}</RecordTransitionProvider></CloudProvider></body>
+    <body><FileDropGuard /><CloudProvider usageEnabled={usageEnabled}><RecordTransitionProvider>{children}</RecordTransitionProvider></CloudProvider></body>
   </html>;
 }
