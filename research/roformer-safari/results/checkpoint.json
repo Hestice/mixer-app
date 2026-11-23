@@ -1,0 +1,190 @@
+{
+  "date": "2026-11-23",
+  "browser": "Native Safari 27.2",
+  "hardware": "M3 MacBook Air, 16 GB",
+  "runtime": "ONNX Runtime Web 1.31.1",
+  "input": "Linger 01:45\u201302:09; unchanged saved SCNet vocals",
+  "path": "CPU front; grouped full-context attention and fused mask on WebGPU",
+  "originalInitializersVerifiedUnchanged": 436,
+  "originalInitializerCount": 436,
+  "weightsChanged": false,
+  "realContextFrames": 801,
+  "internalAttentionFrames": 832,
+  "extraKeyPositions": "Masked with negative infinity before softmax; extra query outputs sliced away",
+  "timeIndependentBatch": 4,
+  "frequencyIndependentBatch": 89,
+  "windowSeconds": 8,
+  "overlap": "50%, original Hamming blending",
+  "firstPassSeconds": 192.3045,
+  "previousGpuAssistedSeconds": 234.91488,
+  "earlierCpuSeconds": 672.89792,
+  "eightSecondProbes": [
+    {
+      "name": "Unpadded control",
+      "tag": "safari-unpadded-control-v6",
+      "variant": "wide-half",
+      "firstSeconds": 79.28018,
+      "warmSeconds": 62.53202000000002,
+      "warmAttentionSeconds": 27.215639999999997
+    },
+    {
+      "name": "Masked padding",
+      "tag": "safari-padded-probe-v6",
+      "variant": "padded",
+      "firstSeconds": 83.01294,
+      "warmSeconds": 48.933359999999986,
+      "warmAttentionSeconds": 15.639460000000007
+    },
+    {
+      "name": "Padding + grouped batches",
+      "tag": "safari-grouped-padded-v8",
+      "variant": "grouped-padded",
+      "firstSeconds": 88.2706,
+      "warmSeconds": 40.294940000000004,
+      "warmAttentionSeconds": 13.449720000000015
+    },
+    {
+      "name": "Padding + grouped + GPU mask",
+      "tag": "safari-padded-gpu-mask-v9",
+      "variant": "gpu-mask",
+      "firstSeconds": 73.76216,
+      "warmSeconds": 26.939899999999994,
+      "warmAttentionSeconds": 12.469040000000007
+    }
+  ],
+  "fullQuality": {
+    "lead": {
+      "vsPreviousSafariGpu": {
+        "snrDb": 51.02029609433601,
+        "maxSampleDifference": 0.007659912109375,
+        "rmsDeltaDb": 4.334352120967974e-05,
+        "identicalSamples": false
+      },
+      "vsChromiumGpu": {
+        "snrDb": 46.59235655443815,
+        "maxSampleDifference": 0.01385498046875,
+        "rmsDeltaDb": -0.003877551156264785,
+        "identicalSamples": false
+      },
+      "vsCpuReference": {
+        "snrDb": 37.49085533905577,
+        "maxSampleDifference": 0.033416748046875,
+        "rmsDeltaDb": -0.008674171724627247,
+        "identicalSamples": false
+      }
+    },
+    "backing": {
+      "vsPreviousSafariGpu": {
+        "snrDb": 47.02088119700826,
+        "maxSampleDifference": 0.007659912109375,
+        "rmsDeltaDb": -0.0031074951246516345,
+        "identicalSamples": false
+      },
+      "vsChromiumGpu": {
+        "snrDb": 42.568455954551766,
+        "maxSampleDifference": 0.013885498046875,
+        "rmsDeltaDb": 0.009706036788060026,
+        "identicalSamples": false
+      },
+      "vsCpuReference": {
+        "snrDb": 33.43543074822041,
+        "maxSampleDifference": 0.03338623046875,
+        "rmsDeltaDb": 0.041127067369057906,
+        "identicalSamples": false
+      }
+    }
+  },
+  "audioChecks": {
+    "original": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.999969482421875,
+      "rmsDbfs": -10.090827249650689,
+      "matchedGainDb": -13.90917275034931,
+      "sha256": "215a54d46f39bb7ca408f2f49bfcfb08d268f29a2ee6abf7a9fb2a37a93baa76"
+    },
+    "vocals": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.999969482421875,
+      "rmsDbfs": -14.964455527208331,
+      "matchedGainDb": -9.035544472791667,
+      "sha256": "9f9fd1fe87e36928a05cadc6317441749311d9719262299c1dd6411632c40faf"
+    },
+    "mdx-lead": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.798248291015625,
+      "rmsDbfs": -17.57968112168945,
+      "matchedGainDb": -6.42031887831055,
+      "sha256": "5ac08ee176d5d66cbb2adb625c24a69c06ef204327d569801a18a1916f726459"
+    },
+    "mdx-backing": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.778717041015625,
+      "rmsDbfs": -21.582449166554216,
+      "matchedGainDb": -2.4175508334457816,
+      "sha256": "8c8e03f9ff18c8ef1ff39971143a1d6eed9ed0b0367621528d8baf1829279aee"
+    },
+    "mel-lead": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.798492431640625,
+      "rmsDbfs": -17.57963777816824,
+      "matchedGainDb": -6.420362221831759,
+      "sha256": "cfe817d226bcf6db1e6b9a32aed8b21cd77bb5b7b7732612d8ce85318c004f6c"
+    },
+    "mel-backing": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.78070068359375,
+      "rmsDbfs": -21.58555666167887,
+      "matchedGainDb": -2.41444333832113,
+      "sha256": "cb91bdff7ad7cae8cfdd16d19db1e06b26e045d12649cde783dbc548cecc3d36"
+    },
+    "cpu-lead": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.798187255859375,
+      "rmsDbfs": -17.570963606443613,
+      "matchedGainDb": -6.4290363935563875,
+      "sha256": "21e4f2ed28841a683c1b9e3d5994ea46961f553370f130b3824e142179e77ac0"
+    },
+    "cpu-backing": {
+      "frames": 1058400,
+      "channels": 2,
+      "sampleRate": 44100,
+      "finite": true,
+      "peak": 0.76446533203125,
+      "rmsDbfs": -21.62668372904793,
+      "matchedGainDb": -2.373316270952072,
+      "sha256": "56824083d18ed1dd343cf1db168f1ca2496494600701ce62611ffba23634ee04"
+    }
+  },
+  "qualityMeaning": "Numerical fidelity against other executions, not separation accuracy against original singers. Human listening remains necessary.",
+  "timingScope": "Includes per-stage preparation, model loading, initialization, inference and reconstruction; excludes SCNet extraction, internet downloads and initial runtime bootstrap.",
+  "limits": [
+    "Tests were sequential on one Mac under normal desktop use. Memory pressure and thermal state were not controlled.",
+    "One optimized 24-second pass; no full-song or mobile reliability claim.",
+    "No app changes or cloud inference APIs."
+  ],
+  "optimizedTrace": "traces/optimized-full.jsonl",
+  "priorGpuTrace": "traces/prior-gpu-full.jsonl",
+  "audioIncluded": false,
+  "reproduction": "../README.md"
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RoFormer Safari research checkpoint</title>
+  <style>
+    body { max-width: 960px; margin: auto; padding: 28px; font: 16px/1.5 system-ui; color: #30372b; background: #f4f3eb; }
+    label { display: inline-block; margin: 8px; } button, select { padding: 10px; font: inherit; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: white; padding: 20px; }
+    audio { display: block; width: 100%; } button:disabled { opacity: .5; }
+  </style>
+  <h1>RoFormer in native Safari</h1>
+  <p>Local vocal input → lead and combined backing vocals. No inference API.</p>
+  <p id="env"></p>
+  <label>Path <select id="variant">
+    <option value="gpu-mask-fused">Optimized: padding, grouped batches, GPU mask</option>
+    <option value="wide-half">Unpadded GPU control, CPU mask</option>
+    <option value="padded">Masked padding, CPU mask</option>
+    <option value="grouped-padded">Padding and grouped batches, CPU mask</option>
+    <option value="staged-cpu">Staged CPU reference (slow)</option>
+  </select></label>
+  <label>Excerpt <select id="length"><option value="24">24 seconds</option><option value="8">8 seconds</option></select></label>
+  <label>Passes <select id="passes"><option value="1">First pass</option><option value="2">First and repeat pass</option></select></label>
+  <button id="run">Run</button><button id="cancel" disabled>Cancel</button>
+  <p id="status" role="status">Ready. Input is the local vocals.wav supplied during preparation.</p>
+  <pre id="log"></pre><div id="audio"></div>
+  <script type="module" src="./main.ts"></script>
+</html>
