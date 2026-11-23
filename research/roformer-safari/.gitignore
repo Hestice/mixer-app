@@ -1,0 +1,12 @@
+.cache/
+.venv/
+__pycache__/
+*.pyc
+*.onnx
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.aac
+*.zip

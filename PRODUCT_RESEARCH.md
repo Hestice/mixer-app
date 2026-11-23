@@ -1,5 +1,7 @@
 # Audio app product research
 
+The [23 November Safari RoFormer research checkpoint](research/roformer-safari/README.md) records the local lead/backing-vocal comparison, quality checks and reproduction steps. It is an isolated experiment; it does not enable a new model in the production app.
+
 15 November 2026 · Product research and evolving design hypotheses
 
 The proposed product helps everyday music makers turn a sung or played idea into a composition they perform themselves, one audible layer at a time. Its central reward is hearing their parts come together and understanding what each contributes. The strongest starting hypothesis is a guided recording experience for casual singers and guitarists.

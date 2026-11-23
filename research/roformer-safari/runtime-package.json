@@ -1,0 +1,17 @@
+{
+  "name": "roformer-safari-research",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck:checkpoint": "tsc --ignoreConfig --noEmit --allowImportingTsExtensions --module esnext --target es2022 --moduleResolution bundler --lib es2022,dom,dom.iterable,webworker --skipLibCheck compare/main.ts compare/hybrid-fused.worker.ts compare/hybrid-wide.worker.ts compare/hybrid-padded.worker.ts compare/hybrid-grouped.worker.ts compare/staged.worker.ts"
+  },
+  "dependencies": {
+    "onnxruntime-web": "1.31.1"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  }
+}
